@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>金名魔法學院 - 字形幻化術</title>
+    <title>金名魔法學院 - 字形幻化術：百題傳奇之戰</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM CDN -->
@@ -14,123 +14,261 @@
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Nova+Script&display=swap');
         body {
             font-family: 'Noto Sans TC', sans-serif;
+            scroll-behavior: smooth;
+            transition: background-color 1s ease;
         }
+
+        .magic-font { font-family: 'Nova Script', cursive; }
+
+        /* 區域背景主題 */
+        .bg-region-0 { background-color: #064e3b; } /* 草地 */
+        .bg-region-1 { background-color: #1e1b4b; } /* 森林 */
+        .bg-region-2 { background-color: #334155; } /* 礦坑 */
+        .bg-region-3 { background-color: #0c4a6e; } /* 湖泊 */
+        .bg-region-4 { background-color: #78350f; } /* 沙漠 */
+        .bg-region-5 { background-color: #3f3f46; } /* 工廠 */
+        .bg-region-6 { background-color: #164e63; } /* 沼澤 */
+        .bg-region-7 { background-color: #44403c; } /* 山谷 */
+        .bg-region-8 { background-color: #7f1d1d; } /* 神殿 */
+        .bg-region-9 { background-color: #2e1065; } /* 魔王城 */
+
         @media print {
             .no-print { display: none !important; }
             .print-only { display: block !important; }
             body { background: white !important; color: black !important; }
         }
         .print-only { display: none; }
+        
+        /* 滾動條 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #d4af37; }
+
+        /* 戰鬥動畫 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px) rotate(-5deg); }
+            75% { transform: translateX(10px) rotate(5deg); }
+        }
+        .monster-hit { animation: shake 0.2s ease-in-out 2; filter: brightness(1.5) sepia(1) saturate(5) hue-rotate(-50deg); }
+        
+        @keyframes fadeOutUp {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-50px); }
+        }
+        .damage-num {
+            position: absolute;
+            color: #ffeb3b;
+            font-weight: 900;
+            font-size: 2.5rem;
+            pointer-events: none;
+            z-index: 50;
+            text-shadow: 2px 2px 0 #000;
+            animation: fadeOutUp 0.8s ease-out forwards;
+        }
+
+        .floating { animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+        /* 題號按鈕發光 */
+        .glow-active { box-shadow: 0 0 20px rgba(212, 175, 55, 0.7); transform: scale(1.1); z-index: 10; }
+        
+        /* 區域卡片 */
+        .quiz-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 2.5rem;
+        }
+
+        /* 針對題目的特殊樣式：不換行，根據長度縮小 */
+        .dynamic-title {
+            white-space: nowrap;
+            display: inline-block;
+            transform-origin: center;
+        }
     </style>
 </head>
-<body class="bg-[#0f172a] text-[#f8fafc]">
+<body class="bg-[#0f172a] text-[#f8fafc] overflow-x-hidden min-h-screen">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
-        // 簡易 Lucide 圖示組件，對應原代碼中的圖示名稱
+        // 音效引擎
+        const MagicAudio = {
+            ctx: null,
+            init() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+            play(freq, type, duration, volume = 0.1) {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            },
+            correct() { 
+                this.play(523.25, 'sine', 0.2); 
+                setTimeout(() => this.play(880, 'sine', 0.4), 100); 
+            },
+            wrong() { 
+                this.play(150, 'sawtooth', 0.5, 0.2); 
+            },
+            hit() { 
+                this.play(60, 'square', 0.1, 0.3); 
+            }
+        };
+
         const Icon = ({ name, className = "w-5 h-5", ...props }) => {
             const [svg, setSvg] = React.useState('');
-            
             React.useEffect(() => {
-                // 使用 lucide-static 的命名規則或直接使用全域 lucide 物件
                 if (window.lucide && window.lucide.icons[name]) {
-                    const iconSvg = window.lucide.icons[name].toSvg({
-                        class: className,
-                        ...props
-                    });
+                    const iconSvg = window.lucide.icons[name].toSvg({ class: className, ...props });
                     setSvg(iconSvg);
                 }
             }, [name, className]);
-
-            return <span dangerouslySetInnerHTML={{ __html: svg }} />;
+            return <span className="inline-flex" dangerouslySetInnerHTML={{ __html: svg }} />;
         };
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('library');
             const [selectedGroup, setSelectedGroup] = useState('all');
-            const [searchTerm, setSearchTerm] = useState('');
             const [quizIndex, setQuizIndex] = useState(0);
             const [showResult, setShowResult] = useState(false);
             const [score, setScore] = useState(0);
             const [userAnswers, setUserAnswers] = useState({});
             const [wrongAnswers, setWrongAnswers] = useState([]);
             const [studentName, setStudentName] = useState('');
+            const [monsterHit, setMonsterHit] = useState(false);
+            const [damageNums, setDamageNums] = useState([]);
 
-            const groups = [
-                { id: 'all', label: '全部咒語' },
-                { id: 'bi', label: 'ㄅㄧˋ 核心' },
-                { id: 'ban', label: 'ㄅㄢˋ / ㄅㄧㄢˋ 核心' },
-                { id: 'mi', label: 'ㄇㄧˋ 核心' },
-                { id: 'lu', label: 'ㄌㄩˇ 核心' },
-                { id: 'special', label: '異變對體' }
+            const regionData = [
+                { name: "草地領域", emoji: "👾", boss: "新手導師", color: "bg-region-0" },
+                { name: "森林領域", emoji: "👻", boss: "森林法師", color: "bg-region-1" },
+                { name: "礦坑領域", emoji: "👺", boss: "石靈長老", color: "bg-region-2" },
+                { name: "湖畔領域", emoji: "❄️", boss: "冰霜守衛", color: "bg-region-3" },
+                { name: "沙漠領域", emoji: "🌵", boss: "流沙巫師", color: "bg-region-4" },
+                { name: "工廠領域", emoji: "🤖", boss: "鋼鐵核心", color: "bg-region-5" },
+                { name: "沼澤領域", emoji: "🐙", boss: "暗影觸手", color: "bg-region-6" },
+                { name: "山谷領域", emoji: "👹", boss: "雷霆巨魔", color: "bg-region-7" },
+                { name: "神殿領域", emoji: "🔥", boss: "烈焰審判官", color: "bg-region-8" },
+                { name: "終極之城", emoji: "🐲", boss: "字形真龍", color: "bg-region-9" }
             ];
 
             const magicData = [
-                { char: '敝', pinyin: 'ㄅㄧˋ', meaning: '破的、壞的 / 自謙之詞', example: '棄若「敝」屣、敝人', note: '【註解】棄若敝屣：像丟掉破鞋子一樣。比喻毫無留戀地拋棄。', groupId: 'bi' },
-                { char: '敞', pinyin: 'ㄔㄤˇ', meaning: '張開、寬廣', example: '「敞」開、寬「敞」', groupId: 'bi' },
-                { char: '蔽', pinyin: 'ㄅㄧˋ', meaning: '遮掩、掩蓋', example: '遮「蔽」、浮雲「蔽」日', groupId: 'bi' },
-                { char: '幣', pinyin: 'ㄅㄧˋ', meaning: '錢，用來交易的媒介', example: '錢「幣」、銀「幣」', groupId: 'bi' },
-                { char: '弊', pinyin: 'ㄅㄧˋ', meaning: '非法的情事', example: '作「弊」、「弊」端', groupId: 'bi' },
-                { char: '斃', pinyin: 'ㄅㄧˋ', meaning: '指「死亡」', example: '坐以待「斃」、槍「斃」', groupId: 'bi' },
-                { char: '憋', pinyin: 'ㄅㄧㄝ', meaning: '壓抑、強忍著', example: '「憋」尿、「憋」不住', groupId: 'special' },
-                { char: '瞥', pinyin: 'ㄆㄧㄝ', meaning: '眼神一閃，過目很快', example: '驚鴻一「瞥」', groupId: 'special' },
-                { char: '辯', pinyin: 'ㄅㄧㄢˋ', meaning: '爭論是非曲直', example: '爭「辯」、 「辯」論', groupId: 'ban' },
-                { char: '辦', pinyin: 'ㄅㄢˋ', meaning: '創設、經營 / 方法', example: '興「辦」、「辦」法', groupId: 'ban' },
-                { char: '辨', pinyin: 'ㄅㄧㄢˋ', meaning: '分別、判別', example: '分「辨」、明「辨」是非', groupId: 'ban' },
-                { char: '瓣', pinyin: 'ㄅㄢˋ', meaning: '花片', example: '花「瓣」', groupId: 'ban' },
-                { char: '密', pinyin: 'ㄇㄧˋ', meaning: '不應洩露的事情', example: '祕「密」、保「密」', groupId: 'mi' },
-                { char: '蜜', pinyin: 'ㄇㄧˋ', meaning: '採花液釀成 / 甜美的事', example: '蜂「蜜」、甜「蜜」', groupId: 'mi' },
-                { char: '耽', pinyin: 'ㄉㄢ', meaning: '延遲 / 著迷、沉溺', example: '「耽」擱、「耽」溺', groupId: 'special' },
-                { char: '眈', pinyin: 'ㄉㄢ', meaning: '雙眼直視、瞪視', example: '虎視「眈眈」', groupId: 'special' },
-                { char: '履', pinyin: 'ㄌㄩˇ', meaning: '鞋子 / 實行某件事', example: '西裝革「履」、履行', groupId: 'lu' },
-                { char: '縷', pinyin: 'ㄌㄩˇ', meaning: '衣服破舊樣子 / 線', example: '篳路藍「縷」、金「縷」衣', groupId: 'lu' },
-                { char: '屢', pinyin: 'ㄌㄩˇ', meaning: '常常、每每', example: '「屢」次、屢試不爽', groupId: 'lu' },
-                { char: '漬', pinyin: 'ㄗˋ', meaning: '汙點 / 浸泡', example: '油「漬」、醃「漬」', groupId: 'special' },
-                { char: '嘖', pinyin: 'ㄗㄜˊ', meaning: '發出讚美的聲音', example: '「嘖嘖」稱奇', groupId: 'special' },
+                { char: '敝', pinyin: 'ㄅㄧˋ', meaning: '破舊的 / 謙稱自己的東西', example: '「敝」帚自珍、棄若「敝」屣', note: '【奧義】1.敝帚自珍：珍愛自己的普通東西。 2.棄若敝屣：毫無留戀地拋棄。', groupId: 'bi' },
+                { char: '敞', pinyin: 'ㄔㄤˇ', meaning: '張開、寬廣', example: '寬「敞」、明「敞」', note: '【奧義】空間廣闊、光線充足。', groupId: 'bi' },
+                { char: '蔽', pinyin: 'ㄅㄧˋ', meaning: '遮蓋、掩護', example: '遮「蔽」、掩「蔽」物', note: '【奧義】艹部代表草木遮蓋。', groupId: 'bi' },
+                { char: '幣', pinyin: 'ㄅㄧˋ', meaning: '交易用的錢財', example: '貨「幣」、新台「幣」', note: '【奧義】巾部代表古代以布帛為貨幣。', groupId: 'bi' },
+                { char: '弊', pinyin: 'ㄅㄧˋ', meaning: '不法、壞處', example: '舞「弊」、利大於「弊」', note: '【奧義】廾部表示雙手私下操作。', groupId: 'bi' },
+                { char: '斃', pinyin: 'ㄅㄧˋ', meaning: '死亡', example: '擊「斃」、坐以待「斃」', note: '【奧義】死部，直接代表生命終結。', groupId: 'bi' },
+                { char: '辨', pinyin: 'ㄅㄧㄢˋ', meaning: '分別、判斷', example: '「辨」認、分辨是非', note: '【奧義】中間是刀，用刀切分好辨認。', groupId: 'ban' },
+                { char: '辯', pinyin: 'ㄅㄧㄢˋ', meaning: '爭論、說理', example: '「辯」論、爭辯', note: '【奧義】中間是言，爭論需用言語。', groupId: 'ban' },
+                { char: '辦', pinyin: 'ㄅㄢˋ', meaning: '處理、創立', example: '「辦」公、創辦', note: '【奧義】中間是力，做事需出力。', groupId: 'ban' },
+                { char: '瓣', pinyin: 'ㄅㄢˋ', meaning: '花片、片狀物', example: '花「瓣」、蒜「瓣」', note: '【奧義】中間是瓜，構造如瓜片。', groupId: 'ban' },
+                { char: '密', pinyin: 'ㄇㄧˋ', meaning: '細緻 / 不公開', example: '精「密」、祕「密」', note: '【奧義】山部，山林隱密沒人知。', groupId: 'mi' },
+                { char: '蜜', pinyin: 'ㄇㄧˋ', meaning: '蜂糖 / 甜美', example: '蜂「蜜」、甜「蜜」', note: '【奧義】虫部，蜜蜂釀的汁液。', groupId: 'mi' },
+                { char: '履', pinyin: 'ㄌㄩˇ', meaning: '鞋 / 實踐', example: '「履」行、削足適「履」', note: '【奧義】下方為「复」，象徵腳步、行走。', groupId: 'mi' },
+                { char: '縷', pinyin: 'ㄌㄩˇ', meaning: '絲線 / 條狀', example: '絲「縷」、一「縷」輕煙', note: '【奧義】糸部，與纖維絲線有關。', groupId: 'mi' },
+                { char: '屢', pinyin: 'ㄌㄩˇ', meaning: '多次、經常', example: '「屢」次、屢試不爽', note: '【奧義】指頻率很高。', groupId: 'mi' },
+                { char: '瞥', pinyin: 'ㄆㄧㄝ', meaning: '看一眼', example: '驚鴻一「瞥」', note: '【奧義】目部，與眼睛看有關。', groupId: 'special' },
+                { char: '憋', pinyin: 'ㄅㄧㄝ', meaning: '忍住', example: '「憋」氣、「憋」不住', note: '【奧義】心部，悶在心裡。', groupId: 'special' },
+                { char: '眈', pinyin: 'ㄉㄢ', meaning: '注視', example: '虎視「眈眈」', note: '【奧義】目部，眼神直盯。', groupId: 'special' },
+                { char: '耽', pinyin: 'ㄉㄢ', meaning: '延遲 / 著迷', example: '「耽」擱、「耽」溺', note: '【奧義】耳部，聽得出神而誤事。', groupId: 'special' },
+                { char: '嘖', pinyin: 'ㄗㄜˊ', meaning: '聲音 / 讚嘆', example: '「嘖嘖」稱奇', note: '【奧義】口部，發出驚嘆聲。', groupId: 'special' },
+                { char: '漬', pinyin: 'ㄗˋ', meaning: '汙點 / 浸泡', example: '油「漬」、醃「漬」', note: '【奧義】水部，液體浸染。', groupId: 'special' },
             ];
 
-            const quizData = [
-                { story: "大法師的禮服派對即將開始，他想形容一雙鞋子很考究，應使用：", q: "大法師想要形容一雙鞋子很考究，應使用：", options: ["西裝革『縷』", "西裝革『履』", "西裝革『屢』", "西裝革『律』"], correct: 1, hint: "提示：『履』(ㄌㄩˇ) 指鞋子，下方為『复』(腳步)。" },
-                { story: "在魔法契約的判定中，需要『明辨是非』。請問『辨』字的中間是什麼？", q: "『明辨是非』的『辨』字，中間的部分是？", options: ["言 (爭論)", "力 (辦事)", "刀 (分別)", "瓜 (瓜瓣)"], correct: 2, hint: "提示：辨(ㄅㄧㄢˋ)別需要用『刀』切分開來。" },
-                { story: "學院的貓頭鷹信差飛過窗前，你只看到一眼，這稱為：", q: "貓頭鷹飛過，只看到一眼稱為？", options: ["驚鴻一『憋』", "驚鴻一『別』", "驚鴻一『撇』", "驚鴻一『瞥』"], correct: 3, hint: "提示：瞥(ㄆㄧㄝ)上有『目』，代表眼睛看。" },
-                { story: "魔法金庫發生了遺失事件，長老提醒大家注意：", q: "關於『幣』與『弊』的用法，何者正確？", options: ["金『幣』輝煌", "作『弊』端", "錢『幣』", "『弊』重就輕"], correct: 2, hint: "提示：幣(ㄅㄧˋ) 與錢財相關；弊則指非法情事。" },
-                { story: "這是一封標記為『祕密』的魔法信件，請問『密』字下方是？", q: "『祕密』的『密』字下方是什麼？", options: ["山 (ㄇㄧˋ)", "蟲 (ㄇㄧˋ)", "示 (ㄒㄧˋ)", "口 (ㄎㄡˇ)"], correct: 0, hint: "提示：密(ㄇㄧˋ) 下方是『山』，指深山中不為人知。" },
-                { story: "創業維艱。在魔法史中，前輩開拓森林時被形容為：", q: "『篳路藍縷』的『縷』代表？", options: ["屢次", "鞋子", "破衣/線", "辦理"], correct: 2, hint: "提示：縷(ㄌㄩˇ) 是系部，指衣服的線條或布料。" },
-                { story: "巨龍在遠處雙眼直視，等待進攻時機，這動作是：", q: "『虎視眈眈』的『眈』讀音為？", options: ["ㄉㄢ", "ㄉㄢˇ", "ㄕㄣˇ", "ㄉㄢˋ"], correct: 0, hint: "提示：眈(ㄉㄢ) 與眼相關，雙眼注視之意。注意不要與『審』(ㄕㄣˇ) 搞混。" },
-                { story: "大法師在審判室想要『分辨是非』，應填入哪個字？", q: "大法師想要『分(  )是非』應填入？", options: ["瓣", "辦", "辨", "辯"], correct: 2, hint: "提示：辨別、判斷應用『辨』。" },
-                { story: "天色昏暗，就像浮雲擋住了太陽，這景象是：", q: "『浮雲(  )日』應用哪個字？", options: ["幣", "弊", "蔽", "敝"], correct: 2, hint: "提示：蔽(ㄅㄧˋ) 指遮掩、掩蓋。" },
-                { story: "對於毫無留戀的舊魔杖，法師會：", q: "對於無留戀的事物『棄若(  )屣』：", options: ["幣", "弊", "蔽", "敝"], correct: 3, hint: "提示：敝(ㄅㄧˋ) 指破舊。敝屣即破草鞋。" }
-            ];
+            const fullQuizData = useMemo(() => {
+                const base = [
+                    { story: "導師：判斷是非是法師的基本。", q: "請問下列何者是指「判斷是非」的正確用字？", options: ["分「辦」", "分「辯」", "分「辨」", "分「瓣」"], correct: 2, hint: "辨別需用「刀」切分清楚。" },
+                    { story: "導師：祕密需要最好的遮蔽。", q: "「這份卷軸屬於最高機(  )」，空格應填入？", options: ["蜜", "密", "秘", "謐"], correct: 1, hint: "山林隱密沒人知，用「密」。" },
+                    { story: "導師：捨棄過時的法術，不要留戀。", q: "形容對事物毫無留戀地拋棄，可用成語「棄若(  )屣」。", options: ["幣", "弊", "蔽", "敝"], correct: 3, hint: "敝指破舊，敝屣即破草鞋。" },
+                    { story: "導師：甜美的語言比良藥有效。", q: "「他的言語像(  )一樣甜美」，空格應填入？", options: ["蜜", "密", "謐", "秘"], correct: 0, hint: "甜的東西與「虫」部釀造有關。" },
+                    { story: "導師：珍惜你的破掃帚，那是自己的。", q: "形容東西雖不好但自己很珍惜的成語是「(  )帚自珍」。", options: ["幣", "敝", "弊", "蔽"], correct: 1, hint: "敝帚指破掃帚。" },
+                    { story: "導師：暗箱操作是法學之恥。", q: "下列詞語何者用字正確？", options: ["作「幣」行為", "遮「幣」視線", "舞「幣」事件", "「弊」帚自珍"], correct: 2, hint: "舞弊是「廾」部，代表雙手操縱。" },
+                    { story: "導師：言出必行，才是強大法師。", q: "請問下列何者是指「實踐承諾」？", options: ["「縷」行諾言", "「履」行諾言", "「屢」行諾言", "「律」行諾言"], correct: 1, hint: "履有鞋、行走之意，代表實踐。" },
+                    { story: "導師：靈感總是在一瞬間閃現。", q: "形容看一眼就消失，可用成語「驚鴻一(  )」。", options: ["瞥", "憋", "撇", "別"], correct: 0, hint: "瞥字上方有「目」，與看有關。" },
+                    { story: "導師：以德服人，而非以力服人。", q: "「雙方法師正在進行激烈的(  )論」，空格應填入？", options: ["辨", "辦", "辯", "瓣"], correct: 2, hint: "爭論需用語言，中間是「言」。" },
+                    { story: "導師：萬物皆有其構造之美。", q: "「這朵七彩魔花的五片花(  )落了一地」，空格應填入？", options: ["瓣", "辦", "辨", "辯"], correct: 0, hint: "花瓣構造如瓜片，中間是「瓜」。" },
+                    { story: "導師：清爽的環境有助於冥想。", q: "這間圖書館採光很好，我們可以形容它非常「寬(  )」。", options: ["敞", "幣", "弊", "敝"], correct: 0, hint: "寬敞代表空間開拓、光亮。" },
+                    { story: "導師：敵人如野獸般在暗處窺視。", q: "形容注視等待時機的成語是「虎視(  )(  )」。", options: ["眈眈", "耽耽", "沈沈", "淡淡"], correct: 0, hint: "眈與注視有關，目字旁。" },
+                    { story: "導師：勇往直前，切莫坐著等死。", q: "形容不尋求生路而等死的成語是「坐以待(  )」。", options: ["斃", "弊", "幣", "敝"], correct: 0, hint: "斃指死亡。" },
+                    { story: "導師：不要讓玩樂延誤了學習進度。", q: "「因為貪玩而(  )擱了修煉進度」，空格應填入？", options: ["耽", "眈", "沈", "深"], correct: 0, hint: "耽擱是耳部，代表聽得出神而誤事。" },
+                    { story: "導師：屏息以待，等待法術爆發。", q: "「他在水底(  )氣長達兩分鐘」，括號中應填入？", options: ["憋", "撇", "瞥", "別"], correct: 0, hint: "忍住氣悶在心中，心字旁。" },
+                    { story: "導師：創業就像在荒地開墾。", q: "成語「篳路藍(  )」中的括號應填入哪一個字？", options: ["屢", "履", "縷", "律"], correct: 2, hint: "藍縷指破爛衣服，糸部。" },
+                    { story: "導師：一而再、再而三地犯錯不可取。", q: "「這名學徒(  )次遲到，長老非常生氣」，空格應填入？", options: ["履", "縷", "屢", "律"], correct: 2, hint: "屢代表次數頻繁。" },
+                    { story: "導師：整潔的法袍能提升魔力反應。", q: "「法袍上沾到了頑固的油(  )」，括號應填入？", options: ["嘖", "漬", "積", "績"], correct: 1, hint: "漬是水部，代表液體浸染。" },
+                    { story: "導師：對奇蹟保持敬畏之心。", q: "形容讚嘆不已的詞語是「(  )(  )稱奇」。", options: ["嘖嘖", "漬漬", "積積", "績績"], correct: 0, hint: "發出聲音讚嘆，口部。" },
+                    { story: "導師：一人之力有限，眾人之力無窮。", q: "「院長親手興(  )了金名魔法學院」，空格應填入？", options: ["辦", "瓣", "辨", "辯"], correct: 0, hint: "創立事業需出力，中間是力。" }
+                ];
 
-            const filteredData = magicData.filter(d => {
-                const matchesSearch = d.char.includes(searchTerm) || d.meaning.includes(searchTerm) || d.example.includes(searchTerm);
-                const matchesGroup = selectedGroup === 'all' || d.groupId === selectedGroup;
-                return matchesSearch && matchesGroup;
-            });
+                const expanded = [];
+                const words = magicData;
+                for(let i=0; i<80; i++) {
+                    const word = words[i % words.length];
+                    const randomType = i % 3;
+                    let qObj;
+                    if(randomType === 0) {
+                        qObj = { story: `導師：字形的微小差異就是成敗關鍵。`, q: `請問「${word.example.replace('「'+word.char+'」', '(  )')}」中應填入哪一個字？`, options: [word.char, words[(i+1)%words.length].char, words[(i+2)%words.length].char, words[(i+3)%words.length].char], correct: 0, hint: `這題測試的是「${word.char}」的正確應用。` };
+                    } else if(randomType === 1) {
+                        qObj = { story: `導師：理解意義，法力才會有根基。`, q: `請問「${word.char}」這個字通常是指？`, options: [word.meaning, "形容外型巨大", "一種攻擊法術", "代表虛無縹緲"], correct: 0, hint: `${word.char} 的奧義是「${word.meaning}」。` };
+                    } else {
+                        qObj = { story: `導師：實戰運用是法師的終極試煉。`, q: `下列詞語何者用字正確？`, options: [word.example, words[(i+2)%words.length].char + "字寫錯了", "魔法混亂無正確", "全部都寫錯了"], correct: 0, hint: `「${word.example}」是正確的用法。` };
+                    }
+                    const originalOptions = [...qObj.options];
+                    const targetOption = originalOptions[0];
+                    const shuffled = originalOptions.sort(() => Math.random() - 0.5);
+                    qObj.options = shuffled;
+                    qObj.correct = shuffled.indexOf(targetOption);
+                    expanded.push(qObj);
+                }
+                return [...base, ...expanded];
+            }, []);
+
+            const currentRegion = useMemo(() => regionData[Math.floor(quizIndex / 10)], [quizIndex]);
+            const hp = 10 - (quizIndex % 10);
 
             const handleSelectOption = (optionIdx) => {
+                const isCorrect = optionIdx === fullQuizData[quizIndex].correct;
                 setUserAnswers(prev => ({ ...prev, [quizIndex]: optionIdx }));
-                if (quizIndex < quizData.length - 1) {
-                    setTimeout(() => setQuizIndex(quizIndex + 1), 500);
+                
+                if (isCorrect) {
+                    MagicAudio.correct();
+                    MagicAudio.hit();
+                    setMonsterHit(true);
+                    const newDmg = { id: Date.now(), val: Math.floor(Math.random()*500 + 500) };
+                    setDamageNums(prev => [...prev, newDmg]);
+                    setTimeout(() => setMonsterHit(false), 400);
+                    setTimeout(() => setDamageNums(prev => prev.filter(d => d.id !== newDmg.id)), 800);
+                } else {
+                    MagicAudio.wrong();
+                }
+
+                if (quizIndex < 99) {
+                    setTimeout(() => setQuizIndex(quizIndex + 1), 600);
                 }
             };
 
             const calculateResults = () => {
                 let finalScore = 0;
                 const finalWrongs = [];
-                quizData.forEach((q, idx) => {
-                    if (userAnswers[idx] === q.correct) {
-                        finalScore += 10;
-                    } else {
+                fullQuizData.forEach((q, idx) => {
+                    if (userAnswers[idx] === q.correct) finalScore += 1;
+                    else {
                         finalWrongs.push({
                             id: idx + 1,
                             question: q.q,
-                            yourAnswer: userAnswers[idx] !== undefined ? q.options[userAnswers[idx]] : "未冥想",
+                            yourAnswer: userAnswers[idx] !== undefined ? q.options[userAnswers[idx]] : "未作答",
                             correctAnswer: q.options[q.correct],
                             hint: q.hint
                         });
@@ -141,358 +279,399 @@
                 setShowResult(true);
             };
 
-            const resetQuiz = () => {
-                setQuizIndex(0);
-                setShowResult(false);
-                setScore(0);
-                setUserAnswers({});
-                setWrongAnswers([]);
+            const getRank = () => {
+                const correctCount = Object.keys(userAnswers).filter(idx => userAnswers[idx] === fullQuizData[idx].correct).length;
+                if (correctCount > 95) return "傳奇教育家";
+                if (correctCount > 80) return "資深大賢者";
+                if (correctCount > 50) return "高級導師";
+                if (correctCount > 20) return "正式法師";
+                return "初級學徒";
             };
 
-            const handlePrint = () => { window.print(); };
+            useEffect(() => {
+                if(activeTab === 'quiz') {
+                    document.body.className = `p-4 md:p-8 ${currentRegion.color} min-h-screen transition-colors duration-1000`;
+                } else {
+                    document.body.className = `bg-[#0f172a] text-[#f8fafc] min-h-screen`;
+                }
+            }, [quizIndex, activeTab, currentRegion]);
 
-            const navigateToNextLesson = () => {
-                window.open('../2/index.html', '_blank');
-            };
+            // 動態縮放題目的 Ref
+            const titleRef = useRef(null);
+            const [scale, setScale] = useState(1);
+
+            useEffect(() => {
+                if (activeTab === 'quiz' && titleRef.current) {
+                    const containerWidth = titleRef.current.parentElement.offsetWidth - 40;
+                    const contentWidth = titleRef.current.scrollWidth;
+                    if (contentWidth > containerWidth) {
+                        setScale(containerWidth / contentWidth);
+                    } else {
+                        setScale(1);
+                    }
+                }
+            }, [quizIndex, activeTab]);
 
             return (
-                <div className="min-h-screen">
-                    {/* 列印視圖內容 */}
-                    <div className="print-only p-10 text-black bg-white">
-                        <div className="text-center mb-10 border-b-2 border-black pb-4">
-                            <h1 className="text-3xl font-bold mb-2">金名魔法學院 - 字形幻化術錯題本</h1>
-                            <div className="flex justify-between items-center text-lg mt-4 px-10">
-                                <p><strong>法師姓名：</strong> {studentName || '見習法師'}</p>
-                                <p><strong>修煉得分：</strong> {score} 分</p>
-                                <p><strong>列印日期：</strong> {new Date().toLocaleDateString()}</p>
-                            </div>
-                        </div>
-                        <h2 className="text-xl font-bold mb-6">【 錯題修行清單 】</h2>
-                        {wrongAnswers.length > 0 ? (
-                            wrongAnswers.map((item, i) => (
-                                <div key={i} className="border border-gray-300 p-5 mb-5 rounded-lg">
-                                    <p className="font-bold text-lg mb-2">第 {item.id} 題：{item.question}</p>
-                                    <div className="grid grid-cols-2 gap-4 mb-2">
-                                        <p>✘ 你的選擇：<span className="line-through">{item.yourAnswer}</span></p>
-                                        <p>✔ 正確咒語：<strong>{item.correctAnswer}</strong></p>
-                                    </div>
-                                    <p className="text-sm border-t pt-2 mt-2"><strong>奧義提示：</strong>{item.hint}</p>
-                                </div>
-                            ))
-                        ) : (
-                            <p className="text-center text-xl mt-20">恭喜！全數通過，無須修行錯題。</p>
-                        )}
-                        <div className="mt-20 text-center border-t pt-10 text-gray-400 text-sm italic">
-                            金名魔法學院 ‧ 國語科教研組 監製
-                        </div>
-                    </div>
-
-                    <div className="no-print">
-                        <header className="bg-gradient-to-b from-[#1e1b4b] to-[#0f172a] border-b border-[#d4af37]/30 py-10 px-4 text-center relative">
-                            <div className="inline-flex items-center gap-3 px-6 py-2 bg-[#d4af37]/10 rounded-full border border-[#d4af37]/50 mb-4">
-                                <Icon name="wand-2" className="w-5 h-5 text-[#d4af37]" />
-                                <span className="text-[#d4af37] font-bold tracking-widest text-sm uppercase">金名魔法學院特訓班</span>
-                            </div>
-                            <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#d4af37] via-[#fef3c7] to-[#d4af37] drop-shadow-2xl">
-                                字形幻化術：魔法奧義辨正
-                            </h1>
-                        </header>
-
-                        <main className="max-w-6xl mx-auto px-4 py-8 pb-40">
-                            <div className="flex flex-wrap justify-center gap-3 mb-10">
-                                {[
-                                    { id: 'library', label: '魔法圖書館', icon: 'book' },
-                                    { id: 'strategy', label: '咒語結構解析', icon: 'zap' },
-                                    { id: 'quiz', label: '100分試煉場', icon: 'skull' },
-                                ].map(tab => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all ${
-                                            activeTab === tab.id 
-                                            ? 'bg-[#d4af37] text-indigo-950 scale-105 shadow-lg' 
-                                            : 'bg-indigo-900/30 text-slate-300 hover:bg-indigo-900/50 border border-indigo-800'
-                                        }`}
+                <div className="max-w-6xl mx-auto pb-32" onClick={() => MagicAudio.init()}>
+                    {/* 頂部資訊列 */}
+                    {activeTab === 'quiz' && !showResult && (
+                        <header className="max-w-5xl mx-auto mb-6 no-print animate-in fade-in duration-700">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+                                <div className="text-center md:text-left">
+                                    <h1 className="text-3xl font-black text-yellow-400 magic-font">JingMing Academy</h1>
+                                    <button 
+                                        onClick={() => setActiveTab('library')}
+                                        className="mt-2 flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-all border border-white/10"
                                     >
-                                        <Icon name={tab.icon} />
-                                        {tab.label}
+                                        <Icon name="chevron-left" className="w-3 h-3" /> 中途撤退：返回學院教學
                                     </button>
+                                </div>
+                                <div className="flex gap-4 mt-4 md:mt-0">
+                                    <div className="bg-black/40 px-6 py-2 rounded-2xl border border-white/10 text-center">
+                                        <p className="text-[10px] text-gray-400 uppercase">修煉稱號</p>
+                                        <p className="text-sm font-bold text-yellow-500">{getRank()}</p>
+                                    </div>
+                                    <div className="bg-black/40 px-6 py-2 rounded-2xl border border-white/10 text-center">
+                                        <p className="text-[10px] text-gray-400 uppercase tracking-tighter">魔法能量</p>
+                                        <p className="text-sm font-bold text-blue-400">{Object.keys(userAnswers).filter(k => userAnswers[k] === fullQuizData[k].correct).length * 50} XP</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+                                {regionData.map((reg, i) => (
+                                    <div key={i} className={`flex-shrink-0 text-center transition-all duration-500 ${Math.floor(quizIndex/10) === i ? 'opacity-100 scale-110' : 'opacity-30 scale-90'}`}>
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl mx-auto border-2 ${Math.floor(quizIndex/10) === i ? 'border-yellow-400 bg-yellow-400/20 shadow-[0_0_15px_rgba(236,201,75,0.5)]' : 'border-white/20'}`}>
+                                            {reg.emoji}
+                                        </div>
+                                        <p className="text-[9px] font-bold mt-1 uppercase text-white/70">{reg.name}</p>
+                                    </div>
                                 ))}
                             </div>
+                        </header>
+                    )}
 
-                            {activeTab === 'library' && (
-                                <div className="space-y-6">
-                                    <div className="flex flex-wrap gap-2 justify-center pb-6 border-b border-indigo-900/50">
-                                        {groups.map(g => (
-                                            <button
-                                                key={g.id}
-                                                onClick={() => setSelectedGroup(g.id)}
-                                                className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
-                                                    selectedGroup === g.id 
-                                                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
-                                                    : 'bg-indigo-950/50 border-indigo-800 text-slate-400 hover:border-[#d4af37]/50'
-                                                }`}
-                                            >
-                                                {g.label}
-                                            </button>
-                                        ))}
-                                    </div>
+                    {/* 導覽列 */}
+                    <nav className={`sticky top-0 z-40 bg-[#0f172a]/90 backdrop-blur-md border-b border-white/5 py-4 px-4 mb-8 ${activeTab === 'quiz' ? 'hidden' : ''}`}>
+                        <div className="max-w-4xl mx-auto flex justify-center gap-6">
+                            {[
+                                { id: 'library', label: '魔法圖書館', icon: 'book-open' },
+                                { id: 'strategy', label: '咒語結構學', icon: 'binary' },
+                                { id: 'quiz', label: '百題試煉場', icon: 'swords' },
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all ${
+                                        activeTab === tab.id 
+                                        ? 'bg-[#d4af37] text-indigo-950 shadow-lg scale-105' 
+                                        : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                                    }`}
+                                >
+                                    <Icon name={tab.icon} />
+                                    <span>{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </nav>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-8">
-                                        {filteredData.map((item, idx) => (
-                                            <div key={idx} className="bg-indigo-950/40 border border-indigo-800/50 rounded-2xl p-5 hover:border-[#d4af37]/50 group transition-all backdrop-blur-sm">
-                                                <div className="flex justify-between items-center mb-3">
-                                                    <span className="text-4xl font-black text-[#d4af37] drop-shadow-lg">{item.char}</span>
-                                                    <span className="bg-indigo-900 px-3 py-1 rounded-lg text-indigo-300 font-bold text-sm">{item.pinyin}</span>
-                                                </div>
-                                                <div className="space-y-3">
-                                                    <p className="text-slate-300 text-sm font-medium leading-relaxed border-l-2 border-[#d4af37]/50 pl-3">
-                                                        {item.meaning}
-                                                    </p>
-                                                    <div className="bg-[#d4af37]/5 p-3 rounded-xl border border-[#d4af37]/20">
-                                                        <span className="text-[10px] text-[#d4af37] font-black uppercase block mb-1">奧義實例</span>
-                                                        <p className="text-[#fef3c7] font-bold text-sm mb-1">{item.example}</p>
-                                                        {item.note && (
-                                                            <p className="text-indigo-200 text-[11px] font-medium italic mt-2 border-t border-[#d4af37]/20 pt-2 leading-relaxed">
-                                                                {item.note}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
+                    <main className="px-4">
+                        {activeTab === 'library' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                {magicData.map((item, idx) => (
+                                    <div key={idx} className="group bg-indigo-950/30 border border-indigo-800/50 rounded-3xl p-6 hover:border-[#d4af37]/60 transition-all relative overflow-hidden">
+                                        <div className="flex items-center gap-4 mb-4 relative z-10">
+                                            <span className="text-5xl font-black text-[#d4af37]">{item.char}</span>
+                                            <div className="bg-indigo-600/90 text-white text-[12px] px-3 py-1 rounded-full font-bold shadow-lg border border-white/10">
+                                                {item.pinyin}
                                             </div>
-                                        ))}
+                                        </div>
+                                        <p className="text-slate-300 text-sm mb-4 border-l-4 border-[#d4af37] pl-3 relative z-10">{item.meaning}</p>
+                                        <div className="bg-black/20 p-4 rounded-2xl relative z-10"><p className="text-[#fef3c7] font-bold text-sm">{item.example}</p></div>
                                     </div>
-                                </div>
-                            )}
+                                ))}
+                            </div>
+                        )}
 
-                            {activeTab === 'strategy' && (
-                                <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8">
-                                    <div className="bg-[#fef3c7] text-indigo-950 p-8 rounded-[40px] shadow-2xl relative border-4 border-[#d4af37]/30">
-                                        <h3 className="text-2xl font-black mb-8 flex items-center gap-2">
-                                            <Icon name="star" className="text-[#d4af37] fill-[#d4af37] w-6 h-6" /> 字形幻化術：結構奧義
-                                        </h3>
-                                        <ul className="space-y-8">
-                                            <li className="space-y-4">
-                                                <div className="flex items-start gap-3 font-black text-xl text-indigo-800">
-                                                    <div className="w-9 h-9 rounded-full bg-indigo-950 text-[#fef3c7] flex items-center justify-center text-sm shadow-lg shrink-0">1</div>
-                                                    <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
-                                                        <span className="whitespace-nowrap">辯(ㄅㄧㄢˋ)</span>、
-                                                        <span className="whitespace-nowrap">辦(ㄅㄢˋ)</span>、
-                                                        <span className="whitespace-nowrap">辨(ㄅㄧㄢˋ)</span>、
-                                                        <span className="whitespace-nowrap">瓣(ㄅㄢˋ)</span>
-                                                        <span className="text-sm font-medium opacity-60 ml-2">(幻化規則)</span>
+                        {activeTab === 'strategy' && (
+                            <div className="max-w-5xl mx-auto space-y-12 animate-in zoom-in-95 duration-500">
+                                <div className="bg-[#fef3c7] text-indigo-950 p-10 rounded-[3rem] shadow-xl">
+                                    <h3 className="text-4xl font-black mb-8 flex items-center gap-3"><Icon name="scroll-text" className="w-10 h-10 text-indigo-800" /> 咒語符號學：奧義精解</h3>
+                                    
+                                    <div className="grid md:grid-cols-2 gap-10">
+                                        {/* 分辨組 */}
+                                        <div className="space-y-6">
+                                            <h4 className="inline-block bg-indigo-950 text-white px-4 py-1 rounded-full text-xs font-bold mb-4">結構辨析：中間部件</h4>
+                                            {[
+                                                { char: '辨', part: '刀', hint: '用「刀」切分清楚，用於辨別、判斷' },
+                                                { char: '辦', part: '力', hint: '處理事務需出「力」氣，用於辦公、興辦' },
+                                                { char: '辯', part: '言', hint: '爭執開口需用「言」語，用於辯論、爭辯' },
+                                                { char: '瓣', part: '瓜', hint: '構造如「瓜」片狀，用於花瓣、瓜瓣' }
+                                            ].map((s, i) => (
+                                                <div key={i} className="flex items-center gap-4 bg-white/50 p-4 rounded-2xl border border-indigo-200">
+                                                    <span className="text-4xl font-black text-indigo-900 w-12">{s.char}</span>
+                                                    <div className="flex-1">
+                                                        <p className="text-sm font-bold text-indigo-800">中間是「{s.part}」</p>
+                                                        <p className="text-xs opacity-80 leading-relaxed">{s.hint}</p>
                                                     </div>
                                                 </div>
-                                                <div className="pl-12 space-y-4">
-                                                    {[
-                                                        { part: '言', sound: 'ㄧㄢˊ', desc: '爭辯需口「言」', target: '辯論、爭辯' },
-                                                        { part: '力', sound: 'ㄌㄧˋ', desc: '辦事需出「力」', target: '辦事、創辦' },
-                                                        { part: '刀', sound: 'ㄉㄠ', desc: '辨別需切分「刀」', target: '辨別、判別' },
-                                                        { part: '瓜', sound: 'ㄍㄨㄚ', desc: '花瓣如「瓜」片', target: '花瓣' },
-                                                    ].map((item, i) => (
-                                                        <div key={i} className="bg-white/50 p-4 rounded-2xl border border-indigo-200">
-                                                            <p className="text-sm font-bold text-indigo-950 leading-relaxed">
-                                                                <span className="whitespace-nowrap">「{item.part}」(<span className="text-indigo-600 italic">{item.sound}</span>)</span>：{item.desc}，故為 <span className="text-indigo-900 underline decoration-indigo-300 underline-offset-4 font-black">{item.target}</span>。
-                                                            </p>
-                                                        </div>
-                                                    ))}
+                                            ))}
+                                        </div>
+
+                                        {/* ㄅㄧˋ 核心家族 */}
+                                        <div className="space-y-6">
+                                            <h4 className="inline-block bg-[#d4af37] text-indigo-950 px-4 py-1 rounded-full text-xs font-bold mb-4">結構辨析：下方部件</h4>
+                                            {[
+                                                { char: '幣', part: '巾', hint: '錢財與布「巾」相關，用於貨幣、錢幣' },
+                                                { char: '弊', part: '廾', hint: '暗地「廾」(雙手) 舞弄不法，用於舞弊、弊端' },
+                                                { char: '斃', part: '死', hint: '生命終結於「死」，用於擊斃、斃命' },
+                                                { char: '蔽', part: '艹', hint: '草木繁茂遮掩視線，用於遮蔽、遮屏' },
+                                                { char: '敝', part: '攵', hint: '本意破舊，用於自謙之詞如：敝人、敝校' }
+                                            ].map((s, i) => (
+                                                <div key={i} className="flex items-center gap-4 bg-white/50 p-4 rounded-2xl border border-[#d4af37]/30">
+                                                    <span className="text-4xl font-black text-indigo-950 w-12">{s.char}</span>
+                                                    <div className="flex-1">
+                                                        <p className="text-sm font-bold text-indigo-800">下方是「{s.part}」</p>
+                                                        <p className="text-xs opacity-80 leading-relaxed">{s.hint}</p>
+                                                    </div>
                                                 </div>
-                                            </li>
-                                        </ul>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="space-y-6">
-                                        <div className="bg-indigo-900/40 border-2 border-[#d4af37]/30 p-8 rounded-[40px] flex flex-col backdrop-blur-sm shadow-xl">
-                                            <h3 className="text-2xl font-black mb-6 text-[#d4af37] flex items-center gap-2"><Icon name="sparkles" /> 幻化高分筆記</h3>
-                                            <div className="space-y-4 flex-1">
-                                                <div className="p-5 bg-indigo-950/80 rounded-2xl border border-indigo-700">
-                                                    <h4 className="font-bold text-[#fef3c7] mb-2 flex items-center gap-2"><Icon name="book-open-check" className="w-4 h-4" /> 結構記憶：敝</h4>
-                                                    <p className="text-slate-300 text-sm leading-relaxed">
-                                                        「敝」本意破舊。成語「棄若敝屣」中的「敝屣」即指破鞋，形容毫不在意地丟棄。
-                                                    </p>
-                                                </div>
-                                                <div className="p-5 bg-indigo-950/80 rounded-2xl border border-indigo-700">
-                                                    <h4 className="font-bold text-[#fef3c7] mb-2 flex items-center gap-2"><Icon name="layout-grid" className="w-4 h-4" /> 元素聯想</h4>
-                                                    <p className="text-slate-300 text-sm leading-loose">
-                                                        目 {'→'} 瞥 (眼神瞬閃)<br/>
-                                                        系 {'→'} 縷 (絲線纖維)<br/>
-                                                        山 {'→'} 密 (隱密幽深)
-                                                    </p>
-                                                </div>
+
+                                    {/* 意符辨析區 */}
+                                    <div className="mt-12 p-8 bg-indigo-900/10 rounded-3xl border border-indigo-200">
+                                        <h4 className="text-2xl font-black text-indigo-800 mb-6 flex items-center gap-2"><Icon name="eye" /> 形聲字：看部首知奧義</h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【目部】與眼神有關</p>
+                                                <p className="text-sm">驚鴻一「瞥」、虎視「眈」眈</p>
+                                            </div>
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【心部】與心情憋悶有關</p>
+                                                <p className="text-sm">忍氣「憋」聲、心裡「憋」得慌</p>
+                                            </div>
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【糸部】與絲線、衣服有關</p>
+                                                <p className="text-sm">篳路藍「縷」、絲「縷」交織</p>
+                                            </div>
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【水部】與液體浸染有關</p>
+                                                <p className="text-sm">油「漬」斑斑、醃「漬」醬菜</p>
+                                            </div>
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【耳部】與聽覺、耽誤有關</p>
+                                                <p className="text-sm">「耽」擱修煉、聽得出神</p>
+                                            </div>
+                                            <div className="bg-white/40 p-4 rounded-xl">
+                                                <p className="font-bold text-indigo-900 mb-2">【山與虫】分辨祕密與甜蜜</p>
+                                                <p className="text-sm">躲入深山 (密) vs 蜜蜂釀造 (蜜)</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
 
-                            {activeTab === 'quiz' && (
-                                <div className="max-w-4xl mx-auto">
-                                    {!showResult ? (
-                                        <div className="bg-indigo-950/60 border border-[#d4af37]/40 p-8 rounded-[40px] backdrop-blur-xl shadow-2xl">
-                                            <div className="flex flex-wrap justify-between gap-3 mb-10 pb-4 border-b border-indigo-900/50">
-                                                {quizData.map((_, i) => (
-                                                    <button 
-                                                        key={i} 
-                                                        onClick={() => setQuizIndex(i)}
-                                                        className={`w-12 h-12 flex items-center justify-center rounded-2xl font-black text-sm transition-all transform hover:scale-110 ${
-                                                            i === quizIndex 
-                                                                ? 'bg-[#d4af37] text-indigo-950 shadow-[0_0_20px_rgba(212,175,55,0.4)]' 
-                                                                : userAnswers[i] !== undefined 
-                                                                    ? 'bg-indigo-600 text-white border-2 border-indigo-400' 
-                                                                    : 'bg-indigo-900/40 text-indigo-700 border border-indigo-800'
-                                                        }`}
-                                                    >
-                                                        {i + 1}
-                                                    </button>
-                                                ))}
-                                            </div>
+                        {activeTab === 'quiz' && (
+                            <div className="max-w-5xl mx-auto space-y-6">
+                                {!showResult ? (
+                                    <>
+                                        {/* 戰鬥區域 */}
+                                        <section className="relative bg-white/10 rounded-[2.5rem] p-8 border border-white/20 overflow-hidden shadow-2xl animate-in slide-in-from-top-4 duration-700">
+                                            <div className="flex items-center justify-between relative z-10">
+                                                <div className="relative group">
+                                                    <div className={`text-8xl md:text-9xl floating cursor-help transition-all duration-300 ${monsterHit ? 'monster-hit' : ''}`}>
+                                                        {currentRegion.emoji}
+                                                    </div>
+                                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                        {damageNums.map(d => (
+                                                            <div key={d.id} className="damage-num">-{d.val}</div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex-grow px-8">
+                                                    <div className="flex justify-between items-end mb-2">
+                                                        <div>
+                                                            <p className="text-yellow-400 font-black text-sm uppercase tracking-widest">REGION 0{Math.floor(quizIndex/10)+1}: {currentRegion.name}</p>
+                                                            <h2 className="text-2xl font-bold text-white">{currentRegion.boss}</h2>
+                                                        </div>
+                                                        <p className="text-xs font-black text-red-500">HP: {hp}/10</p>
+                                                    </div>
+                                                    <div className="h-4 bg-black/40 rounded-full border border-white/10 overflow-hidden">
+                                                        <div className="h-full bg-gradient-to-r from-red-600 to-orange-400 transition-all duration-500" style={{width: `${hp * 10}%`}}></div>
+                                                    </div>
+                                                    <div className="flex gap-1.5 mt-4 justify-center">
+                                                        {Array.from({length:10}).map((_, i) => {
+                                                            const idx = Math.floor(quizIndex/10)*10 + i;
+                                                            let state = "bg-white/20";
+                                                            if(idx === quizIndex) state = "bg-yellow-400 scale-125 shadow-lg shadow-yellow-400/50";
+                                                            else if(userAnswers[idx] !== undefined) {
+                                                                state = userAnswers[idx] === fullQuizData[idx].correct ? "bg-green-500" : "bg-red-500";
+                                                            }
+                                                            return <div key={i} className={`w-2 h-2 rounded-full transition-all ${state}`}></div>;
+                                                        })}
+                                                    </div>
+                                                </div>
 
-                                            <div className="flex justify-between items-center mb-8">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2 bg-[#d4af37]/20 rounded-xl"><Icon name="sword" className="text-[#d4af37]" /></div>
-                                                    <span className="text-[#d4af37] font-black text-sm tracking-widest uppercase">試煉挑戰：第 {quizIndex + 1} 關</span>
+                                                <div className="hidden md:block text-right">
+                                                    <p className="text-[10px] text-gray-400 font-bold uppercase">修行進度</p>
+                                                    <p className="text-4xl font-black text-white/20">{String(quizIndex+1).padStart(2,'0')}/100</p>
                                                 </div>
                                             </div>
+                                        </section>
 
-                                            <div className="bg-indigo-900/30 p-6 rounded-3xl border border-indigo-800 mb-8 italic text-indigo-200 text-lg leading-relaxed font-medium">
-                                                「{quizData[quizIndex].story}」
+                                        {/* 答題區域 */}
+                                        <div className="quiz-card p-8 md:p-12 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col items-center">
+                                            {/* 題目顯示優化：動態縮放且不換行 */}
+                                            <div className="w-full overflow-hidden flex justify-center items-center mb-10 h-24">
+                                                <h2 
+                                                    ref={titleRef}
+                                                    className="dynamic-title text-2xl md:text-5xl font-black text-[#fef3c7] leading-tight text-center"
+                                                    style={{ transform: `scale(${scale})` }}
+                                                >
+                                                    {fullQuizData[quizIndex].q}
+                                                </h2>
                                             </div>
 
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {quizData[quizIndex].options.map((opt, idx) => {
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 w-full">
+                                                {fullQuizData[quizIndex].options.map((opt, idx) => {
                                                     const isSelected = userAnswers[quizIndex] === idx;
+                                                    const isCorrect = fullQuizData[quizIndex].correct === idx;
+                                                    let cls = "bg-white/5 border-white/10 hover:border-indigo-500 text-slate-300";
+                                                    if (userAnswers[quizIndex] !== undefined) {
+                                                        if (isCorrect) cls = "bg-green-600 border-transparent text-white scale-[1.02] shadow-lg";
+                                                        else if (isSelected) cls = "bg-red-600 border-transparent text-white";
+                                                    }
                                                     return (
                                                         <button
                                                             key={idx}
                                                             onClick={() => handleSelectOption(idx)}
-                                                            className={`w-full text-left p-6 rounded-3xl font-bold border-2 transition-all flex items-center justify-between group ${
-                                                                isSelected 
-                                                                    ? 'bg-[#d4af37]/20 border-[#d4af37] text-[#d4af37]' 
-                                                                    : 'bg-indigo-950/40 border-indigo-800 hover:border-indigo-600 text-slate-400'
-                                                            }`}
+                                                            disabled={userAnswers[quizIndex] !== undefined}
+                                                            className={`w-full text-left p-6 rounded-3xl font-bold border-2 transition-all flex items-center justify-between group ${cls}`}
                                                         >
-                                                            <span className="flex items-center gap-3">
-                                                                <div className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs ${isSelected ? 'bg-[#d4af37] border-transparent text-indigo-950' : 'border-indigo-700 text-indigo-700'}`}>
+                                                            <div className="flex items-center gap-4">
+                                                                <span className="w-10 h-10 rounded-xl flex items-center justify-center font-black border text-lg">
                                                                     {String.fromCharCode(65 + idx)}
-                                                                </div>
-                                                                {opt}
-                                                            </span>
-                                                            {isSelected && <Icon name="check-circle" className="w-5 h-5" />}
+                                                                </span>
+                                                                <span className="text-xl">{opt}</span>
+                                                            </div>
+                                                            {userAnswers[quizIndex] !== undefined && isCorrect && <Icon name="check-circle" />}
                                                         </button>
                                                     );
                                                 })}
                                             </div>
 
-                                            <div className="mt-12 flex justify-between items-center pt-8 border-t border-indigo-900/50">
-                                                <button disabled={quizIndex === 0} onClick={() => setQuizIndex(quizIndex - 1)} className="flex items-center gap-2 text-indigo-400 font-black disabled:opacity-20 transition-all">
-                                                    <Icon name="chevron-left" /> 回溯上一關
+                                            {userAnswers[quizIndex] !== undefined && (
+                                                <div className="mt-8 p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-6 animate-in zoom-in-95 w-full">
+                                                    <div className="flex-grow">
+                                                        <p className="text-yellow-400 text-xs font-black mb-1 uppercase tracking-tighter">智慧導師重點攻略</p>
+                                                        <p className="text-gray-200 text-lg leading-relaxed">{fullQuizData[quizIndex].hint}</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => quizIndex === 99 ? calculateResults() : setQuizIndex(quizIndex + 1)}
+                                                        className="bg-yellow-400 text-slate-900 px-10 py-4 rounded-xl font-black text-lg hover:scale-105 active:scale-95 transition-all shadow-xl whitespace-nowrap"
+                                                    >
+                                                        {quizIndex === 99 ? '完成修行' : '繼續前進'} <Icon name="arrow-right" className="ml-2" />
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <div className="mt-10 max-w-xl w-full text-center">
+                                                <p className="text-sm md:text-base text-slate-400 italic">
+                                                    {fullQuizData[quizIndex].story}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* 底部題號導航 */}
+                                        <div className="grid grid-cols-10 gap-2 p-4 bg-black/30 rounded-3xl">
+                                            {fullQuizData.map((_, i) => (
+                                                <button 
+                                                    key={i} 
+                                                    onClick={() => setQuizIndex(i)}
+                                                    className={`aspect-square rounded-lg flex items-center justify-center font-black text-[10px] transition-all outline-none ${
+                                                        i === quizIndex ? 'bg-yellow-400 text-indigo-950 glow-active' :
+                                                        userAnswers[i] !== undefined ? (userAnswers[i] === fullQuizData[i].correct ? 'bg-green-500 text-white' : 'bg-red-500 text-white') :
+                                                        'bg-white/5 text-slate-600 border border-white/5 hover:bg-white/10'
+                                                    }`}
+                                                >
+                                                    {i + 1}
                                                 </button>
-                                                {Object.keys(userAnswers).length === quizData.length && (
-                                                    <button onClick={calculateResults} className="bg-gradient-to-r from-[#d4af37] to-[#fef3c7] text-indigo-950 px-12 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all animate-bounce">提交試煉奧義</button>
-                                                )}
-                                                <button disabled={quizIndex === quizData.length - 1} onClick={() => setQuizIndex(quizIndex + 1)} className="flex items-center gap-2 text-indigo-400 font-black disabled:opacity-20 transition-all">
-                                                    前往下一關 <Icon name="chevron-right" />
+                                            ))}
+                                        </div>
+                                    </>
+                                ) : (
+                                    /* 結算頁面 */
+                                    <div className="space-y-8 animate-in zoom-in-95 duration-700">
+                                        <div className="text-center bg-indigo-950/80 p-12 rounded-[4rem] border-2 border-yellow-400 shadow-2xl relative overflow-hidden">
+                                            <div className="text-8xl font-black text-white mb-2 drop-shadow-xl">{score}</div>
+                                            <div className="text-3xl font-black text-yellow-400 mb-8 tracking-widest uppercase">最終稱號：{getRank()}</div>
+                                            <div className="max-w-xs mx-auto mb-10">
+                                                <input 
+                                                    type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)}
+                                                    placeholder="輸入大師姓名..."
+                                                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-center text-white font-bold focus:border-yellow-400 outline-none transition-all"
+                                                />
+                                            </div>
+                                            <div className="flex flex-wrap gap-4 justify-center">
+                                                <button onClick={() => window.print()} className="bg-white text-indigo-950 px-10 py-5 rounded-2xl font-black flex items-center gap-2 hover:bg-yellow-400 transition-colors">
+                                                    <Icon name="printer" /> 列印修行記錄
+                                                </button>
+                                                <button onClick={() => {setQuizIndex(0); setUserAnswers({}); setShowResult(false);}} className="bg-indigo-600 text-white px-10 py-5 rounded-2xl font-black flex items-center gap-2">
+                                                    <Icon name="rotate-cw" /> 重新開啟冒險
                                                 </button>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="space-y-8 pb-20">
-                                            <div className="text-center bg-gradient-to-b from-indigo-900/40 to-indigo-950/60 p-12 rounded-[50px] border border-[#d4af37]/30 shadow-2xl">
-                                                <div className="text-8xl font-black text-white mb-2">{score} <span className="text-2xl text-[#d4af37]">分</span></div>
-                                                <div className="text-3xl font-black text-[#fef3c7] mb-8">{score === 100 ? "大魔導師：完美幻化！" : "試煉結束，準備修行"}</div>
-                                                
-                                                <div className="max-w-xs mx-auto mb-8">
-                                                    <label className="block text-[#d4af37] text-sm font-bold mb-2 text-left ml-2">法師姓名 (將列印於錯題本)</label>
-                                                    <div className="relative">
-                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2"><Icon name="user" className="w-4 h-4 text-slate-500" /></div>
-                                                        <input 
-                                                            type="text" 
-                                                            value={studentName}
-                                                            onChange={(e) => setStudentName(e.target.value)}
-                                                            placeholder="輸入你的姓名..."
-                                                            className="w-full bg-indigo-950 border border-indigo-800 rounded-xl py-3 pl-12 pr-4 focus:border-[#d4af37] outline-none text-white font-bold"
-                                                        />
+                                        <div className="grid gap-6">
+                                            {wrongAnswers.map((item, i) => (
+                                                <div key={i} className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-red-500/30">
+                                                    <p className="font-black text-slate-200 text-xl mb-6">第 {item.id} 題：{item.question}</p>
+                                                    <div className="grid md:grid-cols-2 gap-4 mb-6">
+                                                        <div className="bg-red-500/10 p-5 rounded-2xl border border-red-500/20">
+                                                            <span className="text-[10px] text-red-400 block mb-1">您的作答</span>
+                                                            <span className="text-red-200 font-bold opacity-60 line-through">{item.yourAnswer}</span>
+                                                        </div>
+                                                        <div className="bg-green-500/10 p-5 rounded-2xl border border-green-500/20">
+                                                            <span className="text-[10px] text-green-400 block mb-1">正確答案</span>
+                                                            <span className="text-green-100 font-black">{item.correctAnswer}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-yellow-400/10 p-5 rounded-2xl flex gap-4 text-sm text-yellow-400 font-bold">
+                                                        <Icon name="lightbulb" className="shrink-0" />
+                                                        <p>智慧解析：{item.hint}</p>
                                                     </div>
                                                 </div>
-
-                                                <div className="flex flex-wrap gap-4 justify-center">
-                                                    <button onClick={handlePrint} className="flex items-center gap-2 bg-white text-indigo-950 px-8 py-4 rounded-2xl font-black hover:scale-105 transition-all shadow-xl">
-                                                        <Icon name="printer" /> 列印錯題修行本
-                                                    </button>
-                                                    <button onClick={resetQuiz} className="flex items-center gap-2 bg-indigo-900 text-white px-8 py-4 rounded-2xl font-black hover:scale-105 transition-all border border-indigo-700">
-                                                        <Icon name="rotate-ccw" /> 重啟修煉
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-indigo-950/40 border border-indigo-800 rounded-[40px] p-10">
-                                                <h3 className="text-2xl font-black text-[#d4af37] mb-8 flex items-center gap-3">
-                                                    <Icon name="layout-grid" className="w-7 h-7" /> 試煉錯題 analysis 與強化
-                                                </h3>
-                                                {wrongAnswers.length === 0 ? (
-                                                    <div className="py-20 text-center bg-emerald-500/10 rounded-3xl border border-emerald-500/20">
-                                                        <p className="text-emerald-300 font-black text-xl">全數通過！你的幻化咒語無懈可擊。</p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-6">
-                                                        {wrongAnswers.map((item, i) => (
-                                                            <div key={i} className="bg-indigo-900/20 p-8 rounded-3xl border border-indigo-800">
-                                                                <p className="font-black text-[#fef3c7] mb-6 text-xl">第 {item.id} 題：「{item.question}」</p>
-                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                                                    <div className="bg-rose-500/10 p-4 rounded-2xl border border-rose-500/20">
-                                                                        <span className="text-[10px] text-rose-400 font-black block mb-1">你的選擇</span>
-                                                                        <span className="text-rose-200 font-bold opacity-70 line-through">{item.yourAnswer}</span>
-                                                                    </div>
-                                                                    <div className="bg-emerald-500/10 p-4 rounded-2xl border border-emerald-500/20">
-                                                                        <span className="text-[10px] text-emerald-400 font-black block mb-1">正確奧義</span>
-                                                                        <span className="text-emerald-100 font-black">{item.correctAnswer}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="bg-[#d4af37]/5 p-5 rounded-2xl border border-[#d4af37]/20 flex gap-4 text-sm text-[#d4af37] font-bold">
-                                                                    <Icon name="alert-circle" className="w-6 h-6 shrink-0" />
-                                                                    <p className="leading-relaxed">{item.hint}</p>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
+                                            ))}
                                         </div>
-                                    )}
-                                </div>
-                            )}
-                        </main>
-
-                        <footer className="fixed bottom-0 left-0 right-0 bg-indigo-950/95 backdrop-blur-lg border-t border-[#d4af37]/20 p-5 z-50">
-                            <div className="max-w-5xl mx-auto flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-2.5 bg-[#d4af37]/20 rounded-xl animate-pulse">
-                                        <Icon name="graduation-cap" className="text-[#d4af37] w-6 h-6" />
                                     </div>
-                                    <div className="hidden md:block">
-                                        <p className="text-[10px] font-black text-[#d4af37] uppercase tracking-widest leading-none mb-1.5">金名魔法學院特訓</p>
+                                )}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 底部修煉條 */}
+                    {activeTab !== 'quiz' && (
+                        <footer className="fixed bottom-0 left-0 right-0 z-50 bg-[#0f172a]/95 backdrop-blur-xl border-t border-white/5 py-6 px-6">
+                            <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-6">
+                                    <div className="p-3 bg-[#d4af37]/20 rounded-2xl animate-pulse"><Icon name="crown" className="text-[#d4af37] w-8 h-8" /></div>
+                                    <div>
+                                        <h4 className="text-[#d4af37] font-black text-xs uppercase tracking-widest mb-1 tracking-widest">目前稱號：{getRank()}</h4>
                                         <div className="flex gap-1.5">
-                                            <div className={`w-4 h-1.5 rounded-full transition-all ${activeTab === 'library' ? 'bg-[#d4af37] w-8' : 'bg-indigo-800'}`}></div>
-                                            <div className={`w-4 h-1.5 rounded-full transition-all ${activeTab === 'strategy' ? 'bg-[#d4af37] w-8' : 'bg-indigo-800'}`}></div>
-                                            <div className={`w-4 h-1.5 rounded-full transition-all ${activeTab === 'quiz' ? 'bg-[#d4af37] w-8' : 'bg-indigo-800'}`}></div>
+                                            {[...Array(5)].map((_, i) => (
+                                                <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${Object.keys(userAnswers).length >= (i + 1) * 20 ? 'bg-[#d4af37] w-8' : 'bg-white/10 w-4'}`}></div>
+                                            ))}
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-8">
-                                    <div className="text-right">
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-tighter mb-0.5">累計修煉能量</p>
-                                        <p className="text-2xl font-black text-[#d4af37] leading-none">{score}</p>
-                                    </div>
-                                    <div className="w-px h-10 bg-indigo-800 mx-2"></div>
-                                    <button 
-                                        onClick={navigateToNextLesson}
-                                        className="flex items-center gap-3 bg-gradient-to-r from-indigo-800 to-indigo-900 px-6 py-3 rounded-2xl text-xs font-black text-[#d4af37] hover:from-[#d4af37] hover:to-[#fef3c7] hover:text-indigo-950 transition-all border border-[#d4af37]/30 shadow-lg group"
-                                    >
-                                        探索下一秘境 <Icon name="chevron-right" className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                    </button>
-                                </div>
+                                <button onClick={() => setActiveTab('quiz')} className="group flex items-center gap-3 bg-gradient-to-r from-[#d4af37] to-[#fef3c7] px-8 py-4 rounded-2xl text-xs font-black text-indigo-950 transition-all hover:scale-105 active:scale-95 shadow-lg">
+                                    進入百題戰場 <Icon name="swords" className="group-hover:translate-x-1 transition-transform" />
+                                </button>
                             </div>
                         </footer>
-                    </div>
+                    )}
                 </div>
             );
         };
