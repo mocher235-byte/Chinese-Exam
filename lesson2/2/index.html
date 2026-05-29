@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金名魔法學院 - 成語典故與魔法試煉</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=Cinzel:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        .font-magic {
+            font-family: 'Cinzel', 'Noto Sans TC', serif;
+        }
+
+        /* 魔法動態與發光效果 */
+        .magic-glow {
+            box-shadow: 0 0 20px rgba(234, 179, 8, 0.15), inset 0 0 15px rgba(234, 179, 8, 0.05);
+        }
+        .magic-glow-hover:hover {
+            box-shadow: 0 0 30px rgba(234, 179, 8, 0.35);
+            border-color: rgba(234, 179, 8, 0.6);
+            transform: translateY(-4px);
+        }
+        .gold-text-shimmer {
+            background: linear-gradient(135deg, #fff 0%, #fef08a 50%, #eab308 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* 自訂捲軸 */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #eab308; border-radius: 10px; }
+
+        /* 列印證書 A4 專屬樣式 */
+        @media print {
+            @page {
+                size: A4 landscape;
+                margin: 0;
+            }
+            body {
+                background: white !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            nav, main, footer, .no-print {
+                display: none !important;
+            }
+            #print-certificate {
+                display: block !important;
+                position: fixed !important;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                margin: 0;
+                padding: 2cm;
+                box-sizing: border-box;
+                z-index: 9999;
+                background: #fff !important;
+            }
+            .cert-border {
+                border: 15px double #1e293b !important;
+                height: 100%;
+                padding: 2rem;
+                box-sizing: border-box;
+                position: relative;
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#030712] text-slate-100 selection:bg-yellow-500/30 overflow-x-hidden min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // 封裝 Lucide 圖標
+        const Icon = ({ name, className = "w-5 h-5", onClick }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} className={className} onClick={onClick}></i>;
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('home');
+            const [selectedCategory, setSelectedCategory] = useState('all');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [studentName, setStudentName] = useState('');
+            const [showPrintModal, setShowPrintModal] = useState(false);
+            const [quizResults, setQuizResults] = useState(null);
+            const [wrongAnswers, setWrongAnswers] = useState([]);
+            const [isScrolled, setIsScrolled] = useState(false);
+            const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+            const [answers, setAnswers] = useState({});
+            const [ttsActive, setTtsActive] = useState(null);
+
+            // 學院 Logo 網址
+            const logoMainUrl = "https://blogger.googleusercontent.com/img/a/AVvXsEjRqKCNWrsH37nthSraJgRc4iUslqv0Pw0urBa9ZwTuV3CLiliGNWjV3EddlJwJ7ox07Uol5GQL77Msjqw-_MUrwQIS6E7iHsdc-RaogP2TVjkJmZ1IkGSrX4ZCLfiZmapAPl5PyxovhZwtsxh080ROmCTJWQcbdtBMAAYIlO-BIsofB7tRYNn0ZZTHEgM";
+            const logoBadgeUrl = "https://blogger.googleusercontent.com/img/a/AVvXsEiZfm4VI-MMnLuqSU0xOgXwbWN-f3eN6F6Hn6rkbZes9wXfUw7655nIyo1LJ6QzA9cOv_j5wFfKW-gDTijB8NeuXVcZqvt93c-Mgiqn3KReMXtLJTczkM1PvTe_X0nLkTlMF_oXJnDUNmLACzognt2FkIU2A85MSRcQykKafbb8E-7xh1U9ZfW8_WYd6YY";
+
+            useEffect(() => {
+                const handleScroll = () => setIsScrolled(window.scrollY > 20);
+                window.addEventListener('scroll', handleScroll);
+                if (window.lucide) window.lucide.createIcons();
+                return () => window.removeEventListener('scroll', handleScroll);
+            }, []);
+
+            // 內建魔音效合成器 (Web Audio API)
+            const playMagicSound = (type) => {
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    if (type === 'correct') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+                        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+                        osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+                        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.4);
+                    } else if (type === 'wrong') {
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(220, ctx.currentTime); // A3
+                        osc.frequency.setValueAtTime(147, ctx.currentTime + 0.15); // D3
+                        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.4);
+                    } else if (type === 'spell') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(880, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.5);
+                        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.5);
+                    }
+                } catch (e) {
+                    console.log('音效不可用', e);
+                }
+            };
+
+            // 語音施法：唸出成語故事
+            const speakIdiom = (word, text) => {
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    if (ttsActive === word) {
+                        setTtsActive(null);
+                        return;
+                    }
+                    const utterance = new SpeechSynthesisUtterance(`${word}。典故：${text}`);
+                    utterance.lang = 'zh-TW';
+                    utterance.rate = 0.95;
+                    utterance.onend = () => setTtsActive(null);
+                    setTtsActive(word);
+                    window.speechSynthesis.speak(utterance);
+                    playMagicSound('spell');
+                }
+            };
+
+            // 1. 載入講義10大核心成語資料
+            const idioms = useMemo(() => [
+                {
+                    word: "懸梁刺股",
+                    zhuyin: "ㄒㄩㄢ ㄌㄧㄤˊ ㄘˋ ㄍㄨˇ",
+                    category: "study",
+                    categoryName: "勤學苦讀",
+                    dynasty: "戰國",
+                    characters: "孫敬、蘇秦",
+                    story: "【懸梁】戰國時孫敬為了防止深夜讀書打瞌睡，將頭髮用繩子綁在屋梁上。一旦疲倦低頭，繩子拉痛頭皮，強迫自己清醒。【刺股】戰國謀士蘇秦，求學時屢遭冷落，為了在昏沉中堅持苦讀，用錐子刺自己的大腿，以劇痛驅走睡意。",
+                    meaning: "比喻刻苦讀書、發憤向學，不怕辛苦、不懈努力。",
+                    example: "班上的第一名總是以懸梁刺股的精神備考，連假日也不放鬆。",
+                    contrast: "著重於以痛覺克服惰性的意志力。"
+                },
+                {
+                    word: "囊螢映雪",
+                    zhuyin: "ㄋㄤˊ ㄧㄥˊ ㄧㄥˋ ㄒㄩㄝˇ",
+                    category: "study",
+                    categoryName: "勤學苦讀",
+                    dynasty: "東晉",
+                    characters: "車胤、孫康",
+                    story: "【囊螢】東晉車胤家境貧困，買不起燈油，夏夜便抓許多螢火蟲裝入薄絹袋中，借螢光讀書。【映雪】同時代的孫康，冬日無燈，便在大雪覆蓋的夜晚，利用雪地反射的月光讀書。",
+                    meaning: "形容身處困苦環境仍勤奮讀書，不因貧窮而放棄求學。",
+                    example: "前人囊螢映雪的苦學精神，值得現代學子效法與省思。",
+                    contrast: "著重於物資缺乏、環境困苦下仍堅持求學的精神。"
+                },
+                {
+                    word: "韋編三絕",
+                    zhuyin: "ㄨㄟˊ ㄅㄧㄢ ㄙㄢ ㄐㄩㄝˊ",
+                    category: "study",
+                    categoryName: "勤學苦讀",
+                    dynasty: "春秋",
+                    characters: "孔子",
+                    story: "孔子晚年勤讀《易經》。古代書籍是用熟牛皮繩（韋）串連竹簡而成。孔子反覆翻閱，竟把牛皮繩磨斷了三次（三）。後世便以此比喻讀書刻苦，反覆研讀不懈。",
+                    meaning: "比喻讀書勤奮刻苦，反覆鑽研不懈。韋：熟牛皮；絕：斷裂。",
+                    example: "她以韋編三絕的毅力鑽研古典文學，終成一代學者。",
+                    contrast: "「三」非實數，表示多次，強調反覆研讀而非僅是讀書量多。"
+                },
+                {
+                    word: "目不窺園",
+                    zhuyin: "ㄇㄨˋ ㄅㄨˋ ㄎㄨㄟ ㄩㄢˊ",
+                    category: "study",
+                    categoryName: "勤學苦讀",
+                    dynasty: "西漢",
+                    characters: "董仲舒",
+                    story: "西漢大儒董仲舒研讀《春秋》，漢景帝時擔任博士。其讀書之專心，到了連住所旁的花園三年都未曾看過一眼的程度。",
+                    meaning: "形容專心治學、讀書用功，心無旁鶩，毫不分心於外物。窺：偷看、張望。",
+                    example: "考前衝刺期間，她目不窺園，連最喜歡的電視節目也暫停了。",
+                    contrast: "強調心無旁鶩與極高的專注力。"
+                },
+                {
+                    word: "三人成虎",
+                    zhuyin: "ㄙㄢ ㄖㄣˊ ㄔㄥˊ ㄏㄨˇ",
+                    category: "wisdom",
+                    categoryName: "謠言愚行",
+                    dynasty: "戰國",
+                    characters: "龐蔥、魏王",
+                    story: "魏國大臣龐蔥即將陪太子前往趙國當人質，臨行前以「市集有虎」向魏王設喻：一人說有虎不信，兩人說動搖，三人說則信。市集雖無虎，但三人異口同聲，謊言便成了真。警示不可輕信流言。",
+                    meaning: "比喻謠言或不實傳聞，經多人附和即被誤信為真。",
+                    example: "網路時代更要小心三人成虎的現象，假消息轉發幾次便成了「事實」。",
+                    contrast: "與「眾口鑠金」近義，但更強調謠言重複傳播導致混淆聽聞的危害。"
+                },
+                {
+                    word: "守株待兔",
+                    zhuyin: "ㄕㄡˇ ㄓㄨ ㄉㄞˋ ㄊㄨˋ",
+                    category: "wisdom",
+                    categoryName: "謠言愚行",
+                    dynasty: "春秋戰國",
+                    characters: "宋國農夫",
+                    story: "宋國一個農夫偶然看見一隻兔子奔跑時撞上田中的樹樁，折頸而死。農夫輕鬆得到一頓美食，此後便放棄耕作，整日守在樹樁旁等待下一隻兔子。韓非子以此故事批評固守陳規、不知變通的人。",
+                    meaning: "比喻拘泥守舊、不知變通，妄想靠偶然的幸運而不勞而獲。",
+                    example: "時代一直在改變，若只懂得守株待兔，終將被社會淘汰。",
+                    contrast: "強調依賴運氣與懶惰，與「按圖索驥」（照本宣科不靈活）相比側重點不同。"
+                },
+                {
+                    word: "指鹿為馬",
+                    zhuyin: "ㄓˇ ㄌㄨˋ ㄨㄟˊ ㄇㄚˇ",
+                    category: "wisdom",
+                    categoryName: "謠言愚行",
+                    dynasty: "秦代",
+                    characters: "趙高、秦二世",
+                    story: "秦二世時宦官趙高專權，特意牽來一頭鹿獻給皇帝卻堅稱是馬。皇帝不信，趙高便反問群臣。懾於威勢，許多人附和說是馬，少數說真話是鹿的人事後皆遭趙高迫害。",
+                    meaning: "比喻故意顛倒是非、混淆黑白，以謊言欺騙他人或蠻橫行事。",
+                    example: "他竟在大庭廣眾下指鹿為馬，將自己的錯誤全推給同事，令人義憤填膺。",
+                    contrast: "強調蓄意欺騙、專權霸道，與三人成虎的無意輕信流言性質不同。"
+                },
+                {
+                    word: "杯弓蛇影",
+                    zhuyin: "ㄅㄟ ㄍㄨㄥ ㄕㄜˊ ㄧㄥˇ",
+                    category: "wisdom",
+                    categoryName: "謠言愚行",
+                    dynasty: "晉代",
+                    characters: "應郴、友人",
+                    story: "應郴邀友飲酒，友人誤將牆上懸掛的弓影當作杯中蛇，勉強喝下後憂慮成疾。應郴查明真相後告知友人，友人病痛立癒。",
+                    meaning: "比喻疑神疑鬼、因誤解而自我驚嚇，庸人自擾。",
+                    example: "他聽到風聲就以為有人要害他，真是杯弓蛇影。",
+                    contrast: "特指因為「具體的誤解環境」而產生的恐懼；而「疑神疑鬼」則泛指多疑。"
+                },
+                {
+                    word: "畫龍點睛",
+                    zhuyin: "ㄏㄨㄚˋ ㄌㄨㄥˊ ㄉㄧㄢˇ ㄐㄧㄥ",
+                    category: "wisdom",
+                    categoryName: "妙筆點睛",
+                    dynasty: "南朝梁",
+                    characters: "張僧繇",
+                    story: "畫家張僧繇在金陵安樂寺壁上畫了四條無眼之龍，直言點了眼睛龍便會飛走。眾人不信，其落筆點睛兩條，頓時雷電大作，兩龍破壁飛天，僅剩未點睛的兩條。",
+                    meaning: "比喻在最關鍵之處加上一筆，使整體更加生動傳神。",
+                    example: "作文結尾那句話真是畫龍點睛，讓全文意境大幅提升。",
+                    contrast: "強調關鍵一亮點對整體的昇華作用。"
+                }
+            ], []);
+
+            // 2. 全套 20 題模擬試題 (完全依照 PDF 講義設計)
+            const fullQuizData = useMemo(() => [
+                {
+                    id: 1,
+                    type: "解釋",
+                    category: "人物出處",
+                    q: "「懸梁刺股」這個成語中，「刺股」指的是哪位戰國人物？他以何種方式提神苦讀？",
+                    opts: [
+                        "1. 孫敬，用繩子把頭髮綁在屋梁上",
+                        "2. 蘇秦，用錐子刺自己的大腿以驅走睡意",
+                        "3. 孔子，用竹簡反覆研讀",
+                        "4. 車胤，用薄絹袋抓螢火蟲借光讀書"
+                    ],
+                    ans: 2,
+                    note: "蘇秦，用錐子刺大腿。孫敬是「懸梁」的主角。"
+                },
+                {
+                    id: 2,
+                    type: "解釋",
+                    category: "人物出處",
+                    q: "「韋編三絕」的典故主角是誰？他晚年反覆鑽研的是哪一部經典書籍？",
+                    opts: [
+                        "1. 孟子，《詩經》",
+                        "2. 董仲舒，《春秋》",
+                        "3. 孔子，《易經》",
+                        "4. 老子，《道德經》"
+                    ],
+                    ans: 3,
+                    note: "孔子研讀《易經》。董仲舒研讀的是《春秋》。"
+                },
+                {
+                    id: 3,
+                    type: "解釋",
+                    category: "人物出處",
+                    q: "「指鹿為馬」的典故中，牽鹿稱馬、以此試探群臣忠誠度的人是誰？此事發生在哪個朝代？",
+                    opts: [
+                        "1. 龐蔥，戰國",
+                        "2. 趙高，秦代",
+                        "3. 應郴，晉代",
+                        "4. 張僧繇，南朝梁"
+                    ],
+                    ans: 2,
+                    note: "趙高，秦代。龐蔥為三人成虎人物；應郴為杯弓蛇影人物；張僧繇為畫龍點睛人物。"
+                },
+                {
+                    id: 4,
+                    type: "解釋",
+                    category: "人物出處",
+                    q: "下列哪一個成語的典故，最早出自於《韓非子》這本書？",
+                    opts: [
+                        "1. 三人成虎",
+                        "2. 守株待兔",
+                        "3. 杯弓蛇影",
+                        "4. 畫龍點睛"
+                    ],
+                    ans: 2,
+                    note: "守株待兔出自《韓非子》。三人成虎出自《戰國策》；杯弓蛇影出自《晉書》；畫龍點睛出自《歷代名畫記》。"
+                },
+                {
+                    id: 5,
+                    type: "解釋",
+                    category: "人物出處",
+                    q: "「囊螢映雪」包含兩個勤學的典故，下列人物與行為的配對何者完全正確？",
+                    opts: [
+                        "1. 車胤囊螢 / 孫康映雪",
+                        "2. 孫敬囊螢 / 蘇秦映雪",
+                        "3. 孫康囊螢 / 車胤映雪",
+                        "4. 董仲舒囊螢 / 孔子映雪"
+                    ],
+                    ans: 1,
+                    note: "車胤囊螢（抓螢火蟲）、孫康映雪（雪地借光），皆為東晉苦讀大師。"
+                },
+                {
+                    id: 6,
+                    type: "字義",
+                    category: "單字解釋",
+                    q: "「韋編三絕」中「絕」字的正確解釋是什麼？",
+                    opts: [
+                        "1. 絕對、一定",
+                        "2. 斷絕、斷裂",
+                        "3. 極好的、一流的",
+                        "4. 結束、完成"
+                    ],
+                    ans: 2,
+                    note: "「絕」在這裡指的是牛皮繩被磨「斷裂」。"
+                },
+                {
+                    id: 7,
+                    type: "字義",
+                    category: "單字解釋",
+                    q: "「目不窺園」中「窺」字的正確解釋是什麼？",
+                    opts: [
+                        "1. 遊覽、觀賞",
+                        "2. 偷看、張望",
+                        "3. 進入、走進",
+                        "4. 打理、照顧"
+                    ],
+                    ans: 2,
+                    note: "「窺」表示從小孔、縫隙中「偷看」或「張望」。"
+                },
+                {
+                    id: 8,
+                    type: "字義",
+                    category: "單字解釋",
+                    q: "「囊螢映雪」中「囊」字的正確解釋與詞性是什麼？",
+                    opts: [
+                        "1. 名詞，指捕蟲網",
+                        "2. 動詞，指「裝入袋中」",
+                        "3. 形容詞，指閃閃發光的",
+                        "4. 代名詞，代指螢火蟲"
+                    ],
+                    ans: 2,
+                    note: "「囊」原指袋子，這裡活用為動詞，指「裝入袋子中」。"
+                },
+                {
+                    id: 9,
+                    type: "字義",
+                    category: "單字解釋",
+                    q: "「韋編三絕」中「韋」字的正確解釋是什麼？",
+                    opts: [
+                        "1. 金屬製成的絲線",
+                        "2. 熟皮製的牛皮繩",
+                        "3. 書寫用的竹片",
+                        "4. 織造的精美布帛"
+                    ],
+                    ans: 2,
+                    note: "「韋」指的是經過加工、柔軟去毛的「熟牛皮繩」。"
+                },
+                {
+                    id: 10,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「小明考試前三週每晚苦讀到凌晨兩點，用各種方法提神，矢志考取第一志願。」最適合用哪個成語形容小明的精神？",
+                    opts: [
+                        "1. 杯弓蛇影",
+                        "2. 懸梁刺股",
+                        "3. 守株待兔",
+                        "4. 三人成虎"
+                    ],
+                    ans: 2,
+                    note: "強調不顧身體疲倦、極度刻苦、以鋼鐵般意志對抗惰性，選懸梁刺股最契合。"
+                },
+                {
+                    id: 11,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「網路上流傳一則消息，說某位藝人出了嚴重車禍，被大量轉發分享後大家都信以為真，最後證實根本是虛驚一場的假新聞。」這最符合哪個成語？",
+                    opts: [
+                        "1. 指鹿為馬",
+                        "2. 畫龍點睛",
+                        "3. 三人成虎",
+                        "4. 守株待兔"
+                    ],
+                    ans: 3,
+                    note: "謠言在網路上被多次複製與轉傳，導致大眾信以為真，是經典的「三人成虎」。"
+                },
+                {
+                    id: 12,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「這位同學在作文的最後一段，用了一句富含哲理的話收尾，讓整篇文章頓時意境大幅提升、生動傳神。」最適合用哪一個？",
+                    opts: [
+                        "1. 韋編三絕",
+                        "2. 囊螢映雪",
+                        "3. 畫龍點睛",
+                        "4. 目不窺園"
+                    ],
+                    ans: 3,
+                    note: "「畫龍點睛」比喻在最關鍵的地方加上神來一筆，使整體變得極為生動。"
+                },
+                {
+                    id: 13,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「祖父家境清寒，小時候晚上沒有電燈，便克服艱苦環境，靠著月光在窗邊讀書，後來終於考上大學。」這符合哪個成語？",
+                    opts: [
+                        "1. 懸梁刺股",
+                        "2. 囊螢映雪",
+                        "3. 杯弓蛇影",
+                        "4. 指鹿為馬"
+                    ],
+                    ans: 2,
+                    note: "強調家境清寒、物資極度貧瘠，但依然想方設法克服環境讀書，選「囊螢映雪」。"
+                },
+                {
+                    id: 14,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「主管明明知道是A部門的失誤，卻在大會上公開指責B部門，強逼所有人承認B部門有錯，完全顛倒事實。」最適合形容主管？",
+                    opts: [
+                        "1. 三人成虎",
+                        "2. 杯弓蛇影",
+                        "3. 守株待兔",
+                        "4. 指鹿為馬"
+                    ],
+                    ans: 4,
+                    note: "利用權勢顛倒黑白、故意混淆是非，強逼他人指稱錯誤之事，正是「指鹿為馬」。"
+                },
+                {
+                    id: 15,
+                    type: "活用",
+                    category: "情境配對",
+                    q: "「老王去年因為在路邊偶然撿到一個裝有五千元的皮夾，此後每天都不去上班，而在同一個地方等，希望能再撿到一次。」最符合？",
+                    opts: [
+                        "1. 韋編三絕",
+                        "2. 守株待兔",
+                        "3. 目不窺園",
+                        "4. 三人成虎"
+                    ],
+                    ans: 2,
+                    note: "比喻拘泥守舊、不知變通，抱著僥倖心態期望不勞而獲，選「守株待兔」。"
+                },
+                {
+                    id: 16,
+                    type: "辨析",
+                    category: "意義辨析",
+                    q: "「杯弓蛇影」這個成語，在日常語境中的最精確涵義是什麼？",
+                    opts: [
+                        "1. 比喻事情的真相被惡意遮掩、密不透風",
+                        "2. 比喻因一時的誤解而心生無端恐懼、自我驚嚇",
+                        "3. 比喻看見影子就以為有人，性格單純極易受騙",
+                        "4. 比喻做事鬼鬼祟祟、不夠光明磊落"
+                    ],
+                    ans: 2,
+                    note: "其核心意涵在於「因為誤解產生的心理作用而庸人自擾、虛驚一場」。"
+                },
+                {
+                    id: 17,
+                    type: "辨析",
+                    category: "意義辨析",
+                    q: "下列關於「目不窺園」的典故理解，何者敘述正確？",
+                    opts: [
+                        "1. 形容大儒董仲舒眼力不佳，看不見花園的美麗景色",
+                        "2. 說明學問家不愛運動，因此從不跨入住所旁的花園",
+                        "3. 形容讀書極其專注認真，連住所旁的花園都三年未曾張望",
+                        "4. 比喻人極度勤勞，將花園修剪得極其整齊"
+                    ],
+                    ans: 3,
+                    note: "目不窺園比喻心無旁鶩、極其專注治學的用功精神。"
+                },
+                {
+                    id: 18,
+                    type: "辨析",
+                    category: "意義辨析",
+                    q: "「三人成虎」最適合用來警惕現代人在社會交往或網路傳播中注意什麼？",
+                    opts: [
+                        "1. 團結力量大，三個人攜手連猛虎都能降伏",
+                        "2. 不要輕信未查證的流言，不實消息重複傳播會混淆視聽、使人誤信",
+                        "3. 人多口雜，在人潮洶湧的市集中要隨時保護自身安全",
+                        "4. 說話、講話應極力避免得罪他人，否則引狼入室"
+                    ],
+                    ans: 2,
+                    note: "三人成虎的核心教訓是謠言被講多了容易使大眾誤信，提醒現代人具備媒體識讀、不輕信流言的智慧。"
+                },
+                {
+                    id: 19,
+                    type: "辨析",
+                    category: "意義辨析",
+                    q: "下列哪一個情境，在「畫龍點睛」的用法上是「不恰當」的？",
+                    opts: [
+                        "1. 演講最後那句『勇氣，不是不害怕，而是帶著恐懼前進』，真是畫龍點睛之筆",
+                        "2. 他在極簡風格的設計圖上加了一個亮眼的金色飾邊，整幅作品頓時有了靈魂，堪稱畫龍點睛",
+                        "3. 她反覆認真修改這篇作文，把每一個段落都重寫了三遍，真是一次畫龍點睛的苦功",
+                        "4. 主廚在盛盤後最後撒上那一小撮神秘香料，菜餚的香氣瞬間提升，簡直是畫龍點睛"
+                    ],
+                    ans: 3,
+                    note: "「重寫了三遍」屬於全面修改、反覆琢磨的「苦功」，不符合「點綴一筆起昇華作用」的畫龍點睛精妙意境。"
+                },
+                {
+                    id: 20,
+                    type: "辨析",
+                    category: "意義辨析",
+                    q: "下列成語中，哪一個成語的典故原型「並非」出自關於勤學苦讀的歷史人物故事？",
+                    opts: [
+                        "1. 懸梁刺股",
+                        "2. 囊螢映雪",
+                        "3. 三人成虎",
+                        "4. 韋編三絕"
+                    ],
+                    ans: 3,
+                    note: "懸梁刺股、囊螢映雪、韋編三絕皆為古代名人的苦學實錄。三人成虎則是龐蔥魏王論謠言的政治寓言。"
+                }
+            ], []);
+
+            const filteredIdioms = useMemo(() => {
+                return idioms.filter(idiom => {
+                    const matchesCategory = selectedCategory === 'all' || idiom.category === selectedCategory;
+                    const matchesSearch = idiom.word.includes(searchQuery) || idiom.meaning.includes(searchQuery) || idiom.story.includes(searchQuery);
+                    return matchesCategory && matchesSearch;
+                });
+            }, [selectedCategory, searchQuery, idioms]);
+
+            const handleStartQuiz = () => {
+                setQuizResults(null);
+                setWrongAnswers([]);
+                setAnswers({});
+                setCurrentQuizIndex(0);
+                setActiveTab('trial');
+                playMagicSound('spell');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const selectAnswer = (questionId, optionIndex) => {
+                setAnswers(prev => ({ ...prev, [questionId]: optionIndex }));
+            };
+
+            const nextQuestion = () => {
+                if (currentQuizIndex < fullQuizData.length - 1) {
+                    setCurrentQuizIndex(prev => prev + 1);
+                }
+            };
+
+            const prevQuestion = () => {
+                if (currentQuizIndex > 0) {
+                    setCurrentQuizIndex(prev => prev - 1);
+                }
+            };
+
+            const submitSingleQuiz = () => {
+                const wrongs = [];
+                const results = [];
+
+                fullQuizData.forEach(q => {
+                    const selected = answers[q.id];
+                    if (selected === q.ans) {
+                        results.push({ id: q.id, correct: true });
+                    } else {
+                        wrongs.push({ ...q, selected: selected ? q.opts[selected - 1] : '未作答' });
+                        results.push({ id: q.id, correct: false });
+                    }
+                });
+
+                setQuizResults(results);
+                setWrongAnswers(wrongs);
+                if (wrongs.length === 0) {
+                    playMagicSound('correct');
+                } else {
+                    playMagicSound('wrong');
+                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const score = quizResults ? Math.round(((fullQuizData.length - wrongAnswers.length) / fullQuizData.length) * 100) : 0;
+
+            return (
+                <div className="min-h-screen flex flex-col justify-between">
+                    {/* 頂部魔法導航欄 */}
+                    <nav className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 px-4 md:px-8 py-3 ${isScrolled ? 'bg-slate-950/90 backdrop-blur-md border-b border-yellow-500/30 shadow-lg' : 'bg-transparent'}`}>
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setActiveTab('home')}>
+                                <img src={logoMainUrl} alt="金名魔法學院標誌" className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-yellow-500/50 shadow-inner group-hover:scale-110 transition-transform duration-300 bg-slate-900 object-cover" />
+                                <div className="leading-tight">
+                                    <h1 className="text-md md:text-xl font-black tracking-wider text-white">
+                                        金名<span className="text-yellow-400">魔法學院</span>
+                                    </h1>
+                                    <span className="text-[10px] md:text-xs text-yellow-500/70 font-mono tracking-widest block font-bold">GOLDEN NAME ACADEMY</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 md:gap-4">
+                                {[
+                                    { id: 'home', label: '學院大廳', icon: "home" },
+                                    { id: 'library', label: '魔法成語書', icon: "book-open" },
+                                    { id: 'trial', label: '魔法試煉場', icon: "sword" }
+                                ].map(tab => (
+                                    <button 
+                                        key={tab.id}
+                                        onClick={tab.id === 'trial' ? handleStartQuiz : () => setActiveTab(tab.id)} 
+                                        className={`flex items-center gap-1.5 text-xs md:text-sm font-black px-3 py-2 rounded-full transition-all duration-300 ${activeTab === tab.id ? 'bg-yellow-500 text-slate-950 shadow-md shadow-yellow-500/20' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <Icon name={tab.icon} className="w-4 h-4" />
+                                        <span className="hidden sm:inline">{tab.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="relative pt-24 pb-16 flex-grow">
+                        {/* 魔法動態星空點綴背景 */}
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(234,179,8,0.04)_0%,transparent_70%)] pointer-events-none -z-10"></div>
+                        
+                        {/* 首頁：學院大廳 */}
+                        {activeTab === 'home' && (
+                            <div className="max-w-6xl mx-auto px-4 py-8 space-y-16 animate-in fade-in zoom-in duration-500">
+                                {/* 巨幕首頁英雄區域 */}
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-slate-950/60 border border-slate-800/60 rounded-[3rem] p-6 md:p-10 shadow-2xl relative overflow-hidden magic-glow">
+                                    <div className="absolute top-0 right-0 w-96 h-96 bg-yellow-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                                    <div className="absolute -bottom-20 -left-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                                    
+                                    <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+                                        <span className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs font-black tracking-widest px-4 py-1.5 rounded-full inline-block uppercase">
+                                            升私中特訓專屬講義 · 智慧解碼
+                                        </span>
+                                        <h2 className="text-4xl md:text-6xl font-black tracking-tight leading-tight gold-text-shimmer font-magic">
+                                            成語典故精講 <br className="hidden md:inline" />
+                                            <span className="text-white">勤學苦讀 & 智慧人生</span>
+                                        </h2>
+                                        <p className="text-slate-400 text-base md:text-lg max-w-xl leading-relaxed font-light">
+                                            成語是中文最精妙的語言資產，四個字凝縮一段歷史。理解典故，你才能真正「用」成語，而不是死背。金名魔法學院特為學子精選核心常考成語，開啟通往名校殿堂的智慧之光。
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
+                                            <button 
+                                                onClick={() => setActiveTab('library')} 
+                                                className="px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-slate-950 rounded-2xl font-black text-lg shadow-lg shadow-yellow-500/10 transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center gap-2"
+                                            >
+                                                <Icon name="book-open" className="w-5 h-5" /> 翻閱成語魔法書
+                                            </button>
+                                            <button 
+                                                onClick={handleStartQuiz} 
+                                                className="px-8 py-4 border border-slate-700 hover:border-yellow-500/50 hover:bg-yellow-500/5 rounded-2xl font-black text-lg transition-all duration-300 flex items-center justify-center gap-2"
+                                            >
+                                                <Icon name="sword" className="w-5 h-5" /> 啟動大考級試煉
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 右側特色：魔法學院精美徽章展示 */}
+                                    <div className="lg:col-span-5 flex justify-center">
+                                        <div className="relative group max-w-[280px] md:max-w-[340px]">
+                                            <div className="absolute inset-0 bg-yellow-500/20 blur-3xl rounded-full group-hover:bg-yellow-500/30 transition duration-500"></div>
+                                            <img 
+                                                src={logoBadgeUrl} 
+                                                alt="金名魔法學院徽章" 
+                                                className="relative z-10 w-full h-auto rounded-[2rem] border-2 border-yellow-500/40 shadow-2xl transform rotate-2 group-hover:rotate-0 transition-transform duration-500 object-cover"
+                                            />
+                                            <div className="absolute -bottom-4 -right-4 bg-slate-900 border border-yellow-500/50 p-4 rounded-2xl shadow-xl z-20 flex items-center gap-3">
+                                                <div className="bg-yellow-500 text-slate-950 p-2 rounded-xl">
+                                                    <Icon name="shield" className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-slate-400 font-bold">特訓班專屬</p>
+                                                    <p className="text-sm font-black text-white">典故通關認證</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 學院特徵與學習指南 */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                    {[
+                                        { title: "勤學苦讀篇", desc: "懸梁刺股、囊螢映雪、韋編三絕...精選四大常考極致苦讀故事，點燃靈魂鬥志。", icon: "sparkles", color: "from-amber-500/20 to-yellow-500/10" },
+                                        { title: "謠言愚行與諷刺", desc: "三人成虎、守株待兔、指鹿為馬...體會歷史與社會中，流言和缺乏應變所帶來的荒誕結局。", icon: "shield-alert", color: "from-purple-500/20 to-slate-900/10" },
+                                        { title: "智慧名校保證", desc: "精準對接升學私中考試題型，囊括「字詞釋義」、「歷史人物對應」、「實際生活活用」與「成語關係辨析」。", icon: "award", color: "from-emerald-500/20 to-slate-900/10" }
+                                    ].map((item, i) => (
+                                        <div key={i} className={`bg-gradient-to-br ${item.color} border border-slate-800/80 rounded-3xl p-8 hover:border-yellow-500/30 transition duration-300 relative overflow-hidden group`}>
+                                            <div className="p-3 bg-slate-950 rounded-2xl w-12 h-12 flex items-center justify-center border border-slate-800 mb-6 group-hover:border-yellow-500/30 transition">
+                                                <Icon name={item.icon} className="text-yellow-400 w-6 h-6" />
+                                            </div>
+                                            <h3 className="text-xl font-bold mb-3 text-white">{item.title}</h3>
+                                            <p className="text-slate-400 text-sm leading-relaxed">{item.desc}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 成語魔法書 */}
+                        {activeTab === 'library' && (
+                            <div className="max-w-6xl mx-auto px-4 space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-500">
+                                <header className="text-center space-y-3">
+                                    <span className="text-yellow-500 font-bold tracking-[0.2em] text-xs md:text-sm uppercase font-magic">GRIMOIRE OF ACADEMY</span>
+                                    <h3 className="text-3xl md:text-5xl font-black tracking-tight text-white font-magic">核心成語魔法法典</h3>
+                                    <p className="text-slate-400 max-w-md mx-auto text-sm">點擊「導師魔音法杖」開啟成語朗讀，一邊聆聽一邊探索背後的歷史密語。</p>
+                                </header>
+
+                                {/* 檢索與篩選器 */}
+                                <div className="bg-slate-900/60 p-6 rounded-[2rem] border border-slate-800 flex flex-col md:flex-row gap-4 items-center justify-between">
+                                    <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 custom-scrollbar">
+                                        {[
+                                            { id: 'all', label: '全部典故' },
+                                            { id: 'study', label: '第一組：勤學苦讀' },
+                                            { id: 'wisdom', label: '第二組：謠言與愚行' }
+                                        ].map(category => (
+                                            <button
+                                                key={category.id}
+                                                onClick={() => { setSelectedCategory(category.id); playMagicSound('spell'); }}
+                                                className={`px-4 py-2.5 rounded-full text-xs md:text-sm font-black whitespace-nowrap transition ${selectedCategory === category.id ? 'bg-yellow-500 text-slate-950 shadow-md' : 'bg-slate-950 text-slate-300 hover:bg-slate-800'}`}
+                                            >
+                                                {category.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="relative w-full md:w-72">
+                                        <span className="absolute inset-y-0 left-4 flex items-center text-slate-500">
+                                            <Icon name="search" className="w-4 h-4" />
+                                        </span>
+                                        <input
+                                            type="text"
+                                            placeholder="搜索成語/人物/釋義..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="w-full bg-slate-950/80 border border-slate-800 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-yellow-500 transition-colors text-slate-200"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 成語卡片網格 */}
+                                {filteredIdioms.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                        {filteredIdioms.map((idiom, idx) => (
+                                            <div key={idx} className="bg-slate-950 border border-slate-800/80 rounded-[2.2rem] p-6 md:p-8 flex flex-col justify-between hover:bg-slate-900/40 transition-all duration-500 magic-glow-hover relative group">
+                                                <div className="space-y-4">
+                                                    {/* 卡片標題區域 */}
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-black bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-2.5 py-0.5 rounded-full">
+                                                                    {idiom.categoryName}
+                                                                </span>
+                                                                <span className="text-[10px] font-bold text-slate-500">
+                                                                    {idiom.dynasty} · {idiom.characters}
+                                                                </span>
+                                                            </div>
+                                                            {}
+                                                            <h4 
+                                                                onClick={() => window.open(`https://www.youtube.com/results?search_query=成語故事+${idiom.word}`, '_blank')}
+                                                                className="text-2xl md:text-3xl font-black text-white hover:text-yellow-400 cursor-pointer transition-colors flex items-center gap-2"
+                                                                title="點擊開啟 YouTube 觀看成語故事"
+                                                            >
+                                                                {idiom.word}
+                                                                <Icon name="play" className="w-4 h-4 text-yellow-500/80 inline-block opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                            </h4>
+                                                            <p className="text-xs text-slate-400/80 tracking-widest leading-none font-bold italic">{idiom.zhuyin}</p>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => speakIdiom(idiom.word, idiom.story)}
+                                                            className={`p-3 rounded-2xl border ${ttsActive === idiom.word ? 'bg-yellow-500 border-yellow-500 text-slate-950 animate-pulse' : 'bg-slate-900 border-slate-800 text-yellow-500 hover:bg-yellow-500/10'} transition-all`}
+                                                            title="語音導師朗讀故事"
+                                                        >
+                                                            <Icon name={ttsActive === idiom.word ? "volume-2" : "audio-lines"} className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* 成語典故詳細故事 */}
+                                                    <div className="space-y-3">
+                                                        <div className="p-4 bg-slate-900/40 rounded-2xl border border-slate-800/60">
+                                                            <h5 className="text-xs text-yellow-500/80 font-black mb-1 flex items-center gap-1.5">
+                                                                <Icon name="scroll" className="w-3 h-3" /> 歷史典故
+                                                            </h5>
+                                                            <p className="text-slate-300 text-xs md:text-sm leading-relaxed font-light">
+                                                                {idiom.story}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* 釋義 */}
+                                                        <div className="p-4 bg-yellow-500/[0.02] rounded-2xl border border-yellow-500/10">
+                                                            <h5 className="text-xs text-yellow-400 font-black mb-1 flex items-center gap-1.5">
+                                                                <Icon name="lightbulb" className="w-3 h-3" /> 意義延伸
+                                                            </h5>
+                                                            <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
+                                                                {idiom.meaning}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 底部例句與對比 */}
+                                                <div className="mt-6 pt-4 border-t border-slate-900 space-y-3">
+                                                    <p className="text-xs text-slate-400 leading-relaxed italic">
+                                                        <span className="text-slate-500 font-bold not-italic">例句 </span>
+                                                        「{idiom.example}」
+                                                    </p>
+                                                    {idiom.contrast && (
+                                                        <div className="text-[11px] text-slate-500 font-light bg-slate-900/30 p-2.5 rounded-xl border border-slate-900">
+                                                            <span className="text-yellow-600 font-bold">考點解析：</span>{idiom.contrast}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-20 bg-slate-950 rounded-[3rem] border border-slate-900 space-y-4">
+                                        <Icon name="file-question" className="w-16 h-16 text-slate-600 mx-auto" />
+                                        <h4 className="text-xl font-bold text-slate-300">未尋找到相符的成語咒語</h4>
+                                        <p className="text-slate-500 text-sm">請嘗試修改關鍵字，例如「孔子」或「螢火蟲」。</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 試煉場 */}
+                        {activeTab === 'trial' && (
+                            <div className="max-w-4xl mx-auto px-4 animate-in fade-in slide-in-from-bottom-8 duration-500">
+                                {quizResults ? (
+                                    // 結算畫面
+                                    <div className="bg-slate-950 border border-yellow-500/20 rounded-[3rem] p-6 md:p-12 text-center space-y-10 shadow-2xl relative overflow-hidden magic-glow">
+                                        <div className="absolute -top-24 -left-24 w-64 h-64 bg-yellow-500/5 rounded-full blur-3xl"></div>
+                                        
+                                        <div className="space-y-3">
+                                            <div className="inline-flex p-5 bg-yellow-500/10 rounded-full border border-yellow-500/20 mb-2">
+                                                <Icon name={score >= 80 ? "crown" : "award"} className="w-12 h-12 text-yellow-500" />
+                                            </div>
+                                            <h3 className="text-4xl font-black text-white tracking-tight font-magic">魔法試煉結算</h3>
+                                            <p className="text-slate-400 text-sm">你已突破金名魔法學院所有 20 層成語考驗</p>
+                                        </div>
+                                        
+                                        {/* 分數與統計 */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto">
+                                            <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-800">
+                                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider mb-1">魔法契合度</p>
+                                                <p className={`text-4xl font-black ${score >= 80 ? 'text-yellow-400' : 'text-orange-400'}`}>{score}分</p>
+                                            </div>
+                                            <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-800">
+                                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider mb-1">答對題數</p>
+                                                <p className="text-4xl font-black text-green-400">{fullQuizData.length - wrongAnswers.length} 題</p>
+                                            </div>
+                                            <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-800">
+                                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider mb-1">失誤次數</p>
+                                                <p className={`text-4xl font-black ${wrongAnswers.length === 0 ? 'text-green-400' : 'text-red-400'}`}>{wrongAnswers.length} 題</p>
+                                            </div>
+                                        </div>
+
+                                        {/* 弱點羊皮紙 (錯題解析) */}
+                                        {wrongAnswers.length > 0 && (
+                                            <div className="text-left bg-slate-900/30 p-6 rounded-[2rem] border border-red-500/10 max-w-3xl mx-auto">
+                                                <h4 className="text-red-400 font-bold text-lg mb-4 flex items-center gap-2">
+                                                    <Icon name="sparkles" className="w-5 h-5 text-red-500" /> 魔法盲點解析（弱點偵測）
+                                                </h4>
+                                                <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                                    {wrongAnswers.map(w => (
+                                                        <div key={w.id} className="p-5 bg-slate-950 border border-slate-900 rounded-2xl">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <span className="text-[10px] font-black text-red-400 bg-red-400/10 border border-red-400/20 px-2 py-0.5 rounded-full">第{w.id}題 · {w.type}</span>
+                                                            </div>
+                                                            <p className="text-slate-200 text-sm mb-3 font-bold">{w.q}</p>
+                                                            <div className="text-xs space-y-1.5 text-slate-400">
+                                                                <p className="text-red-400"><span className="font-bold">你的選擇：</span>{w.selected}</p>
+                                                                <p className="text-green-400"><span className="font-bold">正確答案：</span>({w.ans}) {w.opts[w.ans - 1]}</p>
+                                                                <p className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 mt-2 text-slate-300 text-[11px] leading-relaxed">
+                                                                    <span className="text-yellow-500 font-bold">導師指引：</span>{w.note}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto pt-4">
+                                            <button 
+                                                onClick={() => setShowPrintModal(true)} 
+                                                className="flex-1 py-4 bg-yellow-500 hover:bg-yellow-400 text-slate-950 rounded-2xl font-black text-base flex items-center justify-center gap-2 shadow-lg transition"
+                                            >
+                                                <Icon name="printer" className="w-5 h-5" /> 列印成果證書
+                                            </button>
+                                            <button 
+                                                onClick={handleStartQuiz} 
+                                                className="flex-1 py-4 border border-slate-700 hover:bg-slate-900 text-white rounded-2xl font-black text-base flex items-center justify-center gap-2 transition"
+                                            >
+                                                <Icon name="rotate-ccw" className="w-5 h-5" /> 重新挑戰試煉
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // 考試進行中 (單題問答)
+                                    <div className="space-y-8">
+                                        <div className="bg-slate-950 border border-slate-800 rounded-[2.5rem] p-6 md:p-8 space-y-6">
+                                            {/* 進度與返回 */}
+                                            <div className="flex justify-between items-center text-xs text-slate-400">
+                                                <span className="font-bold text-yellow-500">成語特訓試煉場</span>
+                                                <span className="font-mono bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800">
+                                                    挑戰進度: {currentQuizIndex + 1} / {fullQuizData.length}
+                                                </span>
+                                            </div>
+
+                                            {/* 自訂進度條 */}
+                                            <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                                                <div 
+                                                    className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full transition-all duration-300"
+                                                    style={{ width: `${((currentQuizIndex + 1) / fullQuizData.length) * 100}%` }}
+                                                ></div>
+                                            </div>
+
+                                            {/* 當前問題 */}
+                                            <div className="space-y-8 py-4">
+                                                <div className="space-y-2">
+                                                    <span className="text-[10px] font-black bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-3 py-1 rounded-full uppercase">
+                                                        {fullQuizData[currentQuizIndex].type}
+                                                    </span>
+                                                    <h4 className="text-xl md:text-2xl font-black text-slate-100 leading-relaxed">
+                                                        {fullQuizData[currentQuizIndex].q}
+                                                    </h4>
+                                                </div>
+
+                                                {/* 選項清單 */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {fullQuizData[currentQuizIndex].opts.map((opt, i) => {
+                                                        const optNum = i + 1;
+                                                        const isSelected = answers[fullQuizData[currentQuizIndex].id] === optNum;
+                                                        return (
+                                                            <div 
+                                                                key={i}
+                                                                onClick={() => { selectAnswer(fullQuizData[currentQuizIndex].id, optNum); playMagicSound('spell'); }}
+                                                                className={`p-5 rounded-2xl border cursor-pointer transition duration-200 flex items-center justify-between group ${isSelected ? 'bg-yellow-500/10 border-yellow-500 text-yellow-400' : 'bg-slate-900/60 border-slate-800 hover:border-yellow-500/30 text-slate-300'}`}
+                                                            >
+                                                                <span className="font-bold text-sm md:text-base">{opt}</span>
+                                                                <div className={`w-6 h-6 rounded-full border flex items-center justify-center transition-all ${isSelected ? 'border-yellow-500 bg-yellow-500 text-slate-950' : 'border-slate-700 group-hover:border-yellow-500/30'}`}>
+                                                                    {isSelected && <Icon name="check" className="w-4 h-4 stroke-[3px]" />}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* 控制按鈕 */}
+                                            <div className="flex justify-between items-center pt-4 border-t border-slate-900">
+                                                <button 
+                                                    onClick={prevQuestion} 
+                                                    disabled={currentQuizIndex === 0}
+                                                    className="px-5 py-3 text-sm font-bold border border-slate-800 hover:bg-slate-900 rounded-xl text-slate-400 hover:text-white disabled:opacity-20 transition"
+                                                >
+                                                    上一題
+                                                </button>
+
+                                                {currentQuizIndex < fullQuizData.length - 1 ? (
+                                                    <button 
+                                                        onClick={nextQuestion}
+                                                        disabled={!answers[fullQuizData[currentQuizIndex].id]}
+                                                        className="px-6 py-3 text-sm font-bold bg-yellow-500 hover:bg-yellow-400 disabled:opacity-20 disabled:pointer-events-none text-slate-950 rounded-xl transition shadow-lg"
+                                                    >
+                                                        下一題
+                                                    </button>
+                                                ) : (
+                                                    <button 
+                                                        onClick={submitSingleQuiz}
+                                                        disabled={Object.keys(answers).length < fullQuizData.length}
+                                                        className="px-8 py-3 text-sm font-black bg-white hover:bg-yellow-400 disabled:opacity-30 disabled:pointer-events-none text-slate-950 rounded-xl transition shadow-xl"
+                                                    >
+                                                        提交試煉結果 ({Object.keys(answers).length}/20)
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 列印視窗：登錄試煉名字 */}
+                    {showPrintModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-300">
+                            <div className="bg-slate-900 border border-yellow-500/20 p-8 md:p-12 rounded-[2.5rem] w-full max-w-md space-y-8 relative overflow-hidden magic-glow">
+                                <div className="text-center space-y-3">
+                                    <img src={logoBadgeUrl} alt="金名徽章" className="w-16 h-16 rounded-full mx-auto border border-yellow-500/50 object-cover" />
+                                    <h3 className="text-2xl md:text-3xl font-black text-white font-magic">登錄金名魔法名冊</h3>
+                                    <p className="text-slate-400 text-xs">請輸入閣下的魔法名字，我們將在羊皮紙證書上印記封印</p>
+                                </div>
+                                
+                                <input 
+                                    type="text" 
+                                    placeholder="填寫試煉者姓名" 
+                                    value={studentName}
+                                    onChange={(e) => setStudentName(e.target.value)}
+                                    className="w-full bg-slate-950 border-2 border-slate-800 rounded-2xl px-4 py-3.5 text-lg text-center text-white focus:outline-none focus:border-yellow-500 font-bold transition-all"
+                                    autoFocus
+                                />
+                                
+                                <div className="flex gap-4 pt-4">
+                                    <button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 text-slate-400 hover:text-white transition font-bold text-sm">取消</button>
+                                    <button 
+                                        onClick={() => { 
+                                            setTimeout(() => {
+                                                window.print(); 
+                                                setShowPrintModal(false);
+                                            }, 150);
+                                        }}
+                                        disabled={!studentName.trim()}
+                                        className="flex-1 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-20 disabled:cursor-not-allowed text-slate-950 py-3 rounded-2xl font-black text-sm shadow-md transition"
+                                    >
+                                        生成魔法證書
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* A4 實體列印證書專用（畫面上隱藏，列印時強制顯示） */}
+                    <div id="print-certificate" className="hidden font-serif">
+                        <div className="cert-border flex flex-col justify-between">
+                            <div className="text-center space-y-6">
+                                <div className="flex justify-center items-center gap-4">
+                                    <img src={logoMainUrl} alt="Logo" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    <h1 className="text-6xl font-black tracking-widest text-slate-900">金名魔法學院</h1>
+                                </div>
+                                <div className="flex items-center justify-center gap-4">
+                                    <div className="h-[2px] w-24 bg-slate-800"></div>
+                                    <h2 className="text-3xl font-bold tracking-widest text-slate-700">成語精講試煉證書</h2>
+                                    <div className="h-[2px] w-24 bg-slate-800"></div>
+                                </div>
+                            </div>
+                            
+                            <div className="my-10 space-y-8 text-2xl text-slate-800 leading-relaxed">
+                                <p className="font-bold text-3xl">試煉魔法使：<span className="text-4xl font-black border-b-4 border-slate-900 px-6 mx-2">{studentName}</span></p>
+                                <p>
+                                    於西元 <span className="font-bold underline">{new Date().getFullYear()}</span> 年完成
+                                    「高頻成語應用與辨析」之終極特訓試煉。本次共計挑戰 <span className="font-bold">20</span> 道難題，成功解開 <span className="font-bold text-blue-800 underline underline-offset-8">{fullQuizData.length - wrongAnswers.length}</span> 道成語魔法陣，獲得認證。
+                                </p>
+                                
+                                <div className="bg-slate-50 p-8 rounded-3xl border-2 border-slate-200 text-center space-y-2">
+                                    <p className="text-lg text-slate-500 font-bold tracking-widest">魔法評等得分</p>
+                                    <p className="text-5xl font-black text-slate-950">{score} 分</p>
+                                </div>
+
+                                {wrongAnswers.length > 0 && (
+                                    <div className="border-t border-slate-200 pt-6">
+                                        <p className="font-bold text-red-900 text-xl mb-2">★ 待磨練之魔法盲點：</p>
+                                        <div className="grid grid-cols-2 gap-4 text-sm">
+                                            {wrongAnswers.slice(0, 6).map(w => (
+                                                <div key={w.id} className="border-b border-slate-100 pb-1.5 flex justify-between">
+                                                    <span>第{w.id}題 {w.type} </span>
+                                                    <span className="font-bold text-slate-700">對應：({w.ans}) {w.opts[w.ans - 1].substring(0, 15)}...</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-between items-end pt-6 border-t-2 border-slate-300">
+                                <div className="text-xs text-slate-500 font-mono">
+                                    <p>認證日期：{new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                    <p>證書編號：GNA-{Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xl font-bold mb-6 text-slate-800">金名魔法學院 首席大魔法師</p>
+                                    <div className="inline-block px-4 py-2 border-4 border-red-800/30 text-red-800/30 text-sm font-black tracking-widest rounded-full uppercase transform rotate-6">
+                                        學院核可印章
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 頁尾 */}
+                    <footer className="bg-slate-950 border-t border-slate-900/80 py-8 text-center text-xs text-slate-500 relative">
+                        <div className="max-w-7xl mx-auto px-4 space-y-3">
+                            <p className="font-bold tracking-wider text-slate-400">金名魔法學院 · 升私中特訓班</p>
+                            <p>© 2026 Golden Name Magic Academy. All Rights Reserved. 精選常考10大成語典故與全能試煉卷.</p>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
